@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_background_effects">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="server-side material effects behind and around a surface">
+    This protocol lets a client ask the compositor to render material effects
+    for one of its surfaces: a blurred, tinted and saturated backdrop behind a
+    region of it, a refractive rim along that region's edge, a corner radius
+    clipping the surface itself, and a drop shadow cast underneath it.
+
+    The point of doing this server-side is that a client cannot do it at all.
+    What sits behind a surface belongs to other clients, and a translucent
+    surface never gets to see it. The compositor does, and it already has the
+    composited frame in a texture when it draws the surface.
+
+    Shapes are parametric rather than pixel regions. A wl_region is a set of
+    integer rectangles, which cannot describe a rounded corner without
+    thousands of one-pixel steps; the shapes here are fed to a signed distance
+    field in the compositor's fragment shader, so they are antialiased at the
+    output's real resolution with no per-rectangle cost.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <!-- ========================================================= -->
+  <!-- SHAPE MANAGEMENT: Parametric geometry for the GPU         -->
+  <!-- ========================================================= -->
+
+  <interface name="crownos_shape_manager_v1" version="1">
+    <description summary="factory for creating non-rectangular shapes">
+      A global factory for crownos_shape_v1 objects.
+
+      Shapes are not bound to a surface and carry no effect of their own. They
+      are plain geometry, created here and then passed to the requests of
+      crownos_background_effect_surface_v1 that take one.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the shape manager">
+        Destroy the shape factory.
+
+        Shapes created through this manager are unaffected and stay valid until
+        they are destroyed individually.
+      </description>
+    </request>
+
+    <request name="create_shape">
+      <description summary="create a new empty shape">
+        Create a new shape object with no primitives in it.
+
+        A shape with no primitives covers nothing. Passing one to an effect is
+        not an error; it simply leaves that effect covering no pixels, which is
+        how an effect is turned off without destroying the object that carries
+        it.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_shape_v1"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_shape_v1" version="1">
+    <description summary="a mathematically defined geometric shape">
+      A shape is the union of the primitives added to it. Primitives may
+      overlap; the union is what the compositor renders, and overlapping
+      interiors are not double-counted.
+
+      All coordinates and lengths are in surface-local coordinates, the same
+      space wl_surface.set_input_region and xdg_surface.set_window_geometry use.
+      They are therefore independent of the buffer scale and of any viewport
+      transform the surface carries.
+
+      A shape is copied when it is used. The requests that take a shape read
+      its primitives at the time of the request, so the client may destroy the
+      shape, or keep adding to it for a different effect, as soon as the request
+      has been issued. Changing a shape never retroactively changes an effect
+      that was set from it.
+
+      The compositor may limit how many primitives it renders for one shape. A
+      shape past that limit is not an error; the surplus primitives are simply
+      not drawn, because a client that asks for a thousand of them wants a
+      picture, not a material.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_size" value="0"
+             summary="a primitive was given a negative width or height"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the shape">
+        Destroy the shape object.
+
+        Effects already set from this shape keep the geometry they copied.
+      </description>
+    </request>
+
+    <request name="add_rounded_rect">
+      <description summary="add a rounded rectangle to the shape">
+        Add an axis-aligned rectangle with uniformly rounded corners.
+
+        The radius is clamped to half the shorter side, so a radius larger than
+        the rectangle produces a stadium, never an inverted shape. A radius of
+        zero is a sharp rectangle.
+
+        Passing a negative width or height raises an invalid_size error. Zero
+        width or height is allowed and contributes nothing.
+      </description>
+      <arg name="x" type="int" summary="left edge, surface-local"/>
+      <arg name="y" type="int" summary="top edge, surface-local"/>
+      <arg name="width" type="int" summary="width in surface-local pixels"/>
+      <arg name="height" type="int" summary="height in surface-local pixels"/>
+      <arg name="radius" type="uint" summary="corner radius in surface-local pixels"/>
+    </request>
+
+    <request name="add_circle">
+      <description summary="add a circle to the shape">
+        Add a circle. A radius of zero contributes nothing.
+      </description>
+      <arg name="center_x" type="int" summary="centre, surface-local"/>
+      <arg name="center_y" type="int" summary="centre, surface-local"/>
+      <arg name="radius" type="uint" summary="radius in surface-local pixels"/>
+    </request>
+  </interface>
+
+  <!-- ========================================================= -->
+  <!-- EFFECT MANAGEMENT: Applying effects to surfaces           -->
+  <!-- ========================================================= -->
+
+  <interface name="crownos_background_effect_manager_v1" version="1">
+    <description summary="manager for background effects">
+      A global factory for crownos_background_effect_surface_v1 objects, and the
+      object that tells a client which effects this compositor will actually
+      render.
+    </description>
+
+    <enum name="error">
+      <entry name="effect_exists" value="0"
+             summary="the surface already has a background effect object"/>
+    </enum>
+
+    <enum name="capability" bitfield="true">
+      <description summary="effects the compositor is willing to render">
+        Which of the requests below do something. A compositor may withhold a
+        capability because the user turned the effect off, because the
+        renderer could not compile the shaders, or because it is running on
+        battery.
+      </description>
+      <entry name="blur" value="1" summary="set_blur is honoured"/>
+      <entry name="shadow" value="2" summary="set_shadow is honoured"/>
+      <entry name="corner_radius" value="4" summary="set_corner_radius is honoured"/>
+      <entry name="border" value="8" summary="set_border is honoured"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the effect manager">
+        Destroy the factory. Effect objects created through it are unaffected.
+      </description>
+    </request>
+
+    <request name="get_effect_surface">
+      <description summary="get an effect object for a surface">
+        Create an object through which background effects are set on the given
+        surface.
+
+        A surface may have at most one such object alive at a time. Asking for a
+        second one while the first is alive raises an effect_exists error. The
+        surface is free to get a new one once the previous object has been
+        destroyed.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_background_effect_surface_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <event name="capabilities">
+      <description summary="the effects this compositor renders">
+        Sent when the manager is bound, and again every time the set changes.
+
+        When a capability goes away the corresponding effect stops being
+        rendered even if it was set before, and a client that depends on it —
+        a panel relying on blur for its text to be legible — should paint its
+        own background instead. State set for a withdrawn capability is
+        remembered, not discarded, and takes effect again if it returns.
+      </description>
+      <arg name="capabilities" type="uint" enum="capability"/>
+    </event>
+  </interface>
+
+  <interface name="crownos_background_effect_surface_v1" version="1">
+    <description summary="manage background effects for a surface">
+      Sets the material effects rendered for one wl_surface.
+
+      All requests on this interface are double-buffered in the surface's
+      pending state, in the sense of wl_surface.commit. They take effect at the
+      next commit of the associated surface, so a client resizing its window and
+      changing its effects in the same commit never shows one without the other.
+
+      Effects are clipped to the surface for the purposes of input and window
+      geometry: the shadow drawn outside the surface is decoration, it is never
+      part of the input region and never enlarges the window's geometry.
+
+      If the wl_surface is destroyed first, this object becomes inert. Every
+      subsequent request other than destroy raises a surface_destroyed error.
+    </description>
+
+    <enum name="error">
+      <entry name="surface_destroyed" value="0"
+             summary="the wl_surface was destroyed before this object"/>
+      <entry name="invalid_saturation" value="1"
+             summary="a negative saturation multiplier was given"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="remove the effects from the surface">
+        Destroy the object.
+
+        The effects are removed on the next commit of the associated surface,
+        like any other double-buffered change, rather than at the moment this
+        request arrives. A client that wants them gone immediately destroys this
+        object and commits.
+      </description>
+    </request>
+
+    <request name="set_corner_radius">
+      <description summary="round the surface's own corners">
+        Clip the surface, and every effect set on it, to a rounded rectangle
+        covering the whole surface with this corner radius, in surface-local
+        pixels.
+
+        The radius is clamped to half the shorter side of the surface. A radius
+        of zero, the initial value, leaves the surface square.
+      </description>
+      <arg name="radius" type="uint" summary="corner radius in surface-local pixels"/>
+    </request>
+
+    <request name="set_border">
+      <description summary="draw a refractive rim along the effect's edge">
+        Draw a rim of the given width, in surface-local pixels, just inside the
+        edge of the blur shape — or of the whole surface if no blur shape was
+        set.
+
+        The rim is not a stroke of a colour the client picks. It is the
+        compositor's rendering of light passing through the edge of the
+        material: the backdrop is refracted through it and comes back more
+        saturated than the blur behind it, which is what makes the edge read as
+        a bevel rather than as a painted line.
+
+        A width of zero, the initial value, draws no rim.
+      </description>
+      <arg name="width" type="uint" summary="rim width in surface-local pixels"/>
+    </request>
+
+    <request name="set_blur">
+      <description summary="blur the backdrop under a shape">
+        Blur what the compositor composites behind the surface, within the given
+        shape, and tint and saturate the result.
+
+        A null shape means the whole surface, clipped by the corner radius. A
+        non-null shape is copied by this request and clipped to the surface.
+
+        blur_radius is in surface-local pixels and is a request, not a promise:
+        the compositor maps it onto whatever its blur pipeline can express. A
+        blur_radius of zero, the initial value, turns the blur off, and with it
+        the rim, the tint and the saturation, which have nothing to sit on.
+
+        tint_color is ARGB8888, not premultiplied, in the surface's colour
+        space. Its alpha is how much of it is mixed over the blurred backdrop:
+        fully transparent leaves the backdrop's own colours.
+
+        saturation multiplies the blurred backdrop's chroma about its luma
+        before the tint is applied. 1.0 leaves it alone, values above 1.0 are
+        the vibrancy that makes a colour show through frosted glass, 0.0 is
+        greyscale. A negative value raises an invalid_saturation error.
+      </description>
+      <arg name="shape" type="object" interface="crownos_shape_v1" allow-null="true"
+           summary="the shape to blur; null means the entire surface"/>
+      <arg name="blur_radius" type="uint" summary="blur radius in surface-local pixels"/>
+      <arg name="tint_color" type="uint" summary="ARGB8888 tint mixed over the blur"/>
+      <arg name="saturation" type="fixed" summary="chroma multiplier; 1.0 is unchanged"/>
+    </request>
+
+    <request name="set_shadow">
+      <description summary="cast a drop shadow under a shape">
+        Draw a blurred, offset silhouette of the given shape underneath the
+        surface.
+
+        A null shape means the whole surface, clipped by the corner radius. A
+        non-null shape is copied by this request.
+
+        The shadow is drawn outside the surface and is therefore not clipped to
+        it. It is decoration only: it does not extend the input region, the
+        window geometry, or the area the surface is considered to occupy for
+        layout.
+
+        shadow_radius is the blur radius of the silhouette in surface-local
+        pixels; zero, the initial value, draws no shadow. offset_x and offset_y
+        displace it in surface-local pixels, positive being right and down.
+
+        color is ARGB8888, not premultiplied. Its alpha is the shadow's opacity
+        at the centre of the silhouette.
+      </description>
+      <arg name="shape" type="object" interface="crownos_shape_v1" allow-null="true"
+           summary="the shape to cast; null means the entire surface"/>
+      <arg name="shadow_radius" type="uint" summary="blur radius in surface-local pixels"/>
+      <arg name="offset_x" type="int" summary="horizontal offset, surface-local"/>
+      <arg name="offset_y" type="int" summary="vertical offset, surface-local"/>
+      <arg name="color" type="uint" summary="ARGB8888 shadow colour"/>
+    </request>
+  </interface>
+</protocol>

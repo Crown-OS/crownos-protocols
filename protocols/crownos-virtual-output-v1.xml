@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_virtual_output_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="outputs that exist only to be captured">
+    This protocol lets a privileged client create outputs that have no
+    physical display behind them: a tablet used as a second monitor, a
+    headless remote desktop, a stream of an extra workspace. To the rest of
+    the session a virtual output is an ordinary output. It has a wl_output
+    global, windows can be placed and fullscreened on it, layer surfaces can
+    anchor to it, and output management lists and configures it like any
+    other head.
+
+    What a virtual output lacks is a display to pace it. Its frame clock is
+    driven by the client instead: the compositor renders a virtual output, and
+    sends frame callbacks to the surfaces on it, only when the client asks
+    with request_frame. A client streaming the output to an encoder asks once
+    per encoded frame, so the applications on the output draw exactly as often
+    as their pixels are consumed. The pixels themselves are obtained with
+    crownos-screencast-v1, by capturing the virtual output's wl_output.
+
+    Only privileged clients can bind the manager global. A compositor must
+    not expose it to sandboxed clients.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_virtual_output_manager_v1" version="1">
+    <description summary="factory for virtual outputs">
+      A global factory for crownos_virtual_output_v1 objects.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_name" value="0"
+             summary="the name is empty, too long or contains a disallowed character"/>
+      <entry name="invalid_mode" value="1"
+             summary="the size, refresh rate or scale is out of range"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager. Virtual outputs created through it are unaffected
+        and exist until they are destroyed individually.
+      </description>
+    </request>
+
+    <request name="create_output">
+      <description summary="create a virtual output">
+        Create a virtual output. The compositor answers with either created,
+        once the output's wl_output global has been announced, or closed.
+
+        name identifies the output to the user and to output management. It
+        must be 1 to 32 characters from [A-Za-z0-9_-]; anything else raises
+        invalid_name. The compositor namespaces it, so the wl_output and
+        output-management head of the new output are not called name itself
+        but whatever the created event reports. Creating a second output with a
+        name already in use is not an error: the second output is closed with
+        name_taken.
+
+        width and height are the output's mode in pixels, both between 1 and
+        16384. refresh_mhz is the nominal refresh rate in millihertz that the
+        output advertises in its mode; since the frame clock is driven by
+        request_frame it is informational, but clients use it to pick
+        animation rates, so it should match the rate the client intends to
+        request frames at. It must be non-zero. scale_120 is the output scale
+        in 120ths (120 is scale 1, 180 is 1.5), between 60 and 480. Any value
+        out of range raises invalid_mode.
+      </description>
+      <arg name="output" type="new_id" interface="crownos_virtual_output_v1"/>
+      <arg name="name" type="string" summary="client-chosen name"/>
+      <arg name="width" type="int" summary="mode width in pixels"/>
+      <arg name="height" type="int" summary="mode height in pixels"/>
+      <arg name="refresh_mhz" type="uint" summary="nominal refresh rate in mHz"/>
+      <arg name="scale_120" type="uint" summary="output scale in 120ths"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_virtual_output_v1" version="1">
+    <description summary="one virtual output">
+      A virtual output, owned by the client that created it. It exists from
+      the created event until the object is destroyed or closed is sent.
+
+      Requests other than destroy are ignored before created and after
+      closed, since the client cannot tell exactly when either happens.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_mode" value="0"
+             summary="set_mode was given a size, refresh rate or scale out of range"/>
+    </enum>
+
+    <enum name="close_reason">
+      <entry name="name_taken" value="0"
+             summary="another output already uses this name"/>
+      <entry name="revoked" value="1"
+             summary="the compositor or the user removed the output"/>
+      <entry name="failed" value="2"
+             summary="the compositor could not create the output"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="remove the output">
+        Remove the virtual output. Its wl_output global is removed and
+        windows on it move to another output, exactly as when a monitor is
+        unplugged.
+      </description>
+    </request>
+
+    <request name="set_mode">
+      <description summary="change the output's mode">
+        Change the size, nominal refresh rate and scale of the output, with
+        the same ranges as create_output; a value out of range raises
+        invalid_mode. Clients on the output see an ordinary mode change, and
+        screencast sessions capturing it receive new constraints.
+      </description>
+      <arg name="width" type="int" summary="mode width in pixels"/>
+      <arg name="height" type="int" summary="mode height in pixels"/>
+      <arg name="refresh_mhz" type="uint" summary="nominal refresh rate in mHz"/>
+      <arg name="scale_120" type="uint" summary="output scale in 120ths"/>
+    </request>
+
+    <request name="request_frame">
+      <description summary="advance the output's frame clock by one frame">
+        Tell the compositor that the consumer is ready for another frame.
+
+        In response the compositor advances the output by one frame: it
+        renders the output for every screencast session capturing it (subject
+        to that session's own damage and slot rules, so an unchanged output
+        still produces no new frame), and sends frame callbacks and
+        presentation feedback to the surfaces shown on it.
+
+        Nothing on a virtual output is rendered, and no surface on it receives
+        frame callbacks, between two request_frame requests. Several requests
+        before the compositor gets round to the frame collapse into one.
+      </description>
+    </request>
+
+    <event name="created">
+      <description summary="the output exists">
+        The output was created and its wl_output global announced. name is
+        the output's full name: the name the wl_output name event (version 4
+        and later) reports, and the head name output management uses. A
+        client binds the wl_output whose name event matches it.
+
+        Sent at most once. created and closed are mutually exclusive as a
+        first event, but closed may follow created.
+      </description>
+      <arg name="name" type="string" summary="the output's full name"/>
+    </event>
+
+    <event name="closed">
+      <description summary="the output is gone">
+        The output was removed, or could never be created. The object is
+        inert from here on and should be destroyed. This is the last event
+        sent on the object.
+      </description>
+      <arg name="reason" type="uint" enum="close_reason"/>
+    </event>
+  </interface>
+</protocol>

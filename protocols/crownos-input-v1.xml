@@ -1,0 +1,406 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_input_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="injecting input into a seat, and capturing it out">
+    This protocol gives a privileged client two things a remote-control or
+    shared-input service needs and the core protocol deliberately withholds.
+
+    An injector feeds pointer, keyboard and touch events into a seat as if
+    they came from a physical device. They go through the compositor's normal
+    input path: they move the real cursor, change focus, trigger compositor
+    shortcuts and reach whichever client has focus, exactly like local input.
+
+    A capture works the other way round, for sharing one keyboard and mouse
+    between several machines. The client arms it on edges of the output
+    layout; when the user pushes the pointer through an armed edge, the
+    compositor hides the cursor, stops delivering pointer and keyboard input
+    to its clients, and sends every event to the capture client instead,
+    until the client releases it back at a position of its choosing.
+
+    Both are as powerful as a physical keyboard: an injector can type into
+    any window, and a capture sees every keystroke, passwords included. Only
+    privileged clients can bind the manager global. A compositor must not
+    expose it to sandboxed clients.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_input_manager_v1" version="1">
+    <description summary="factory for injectors and captures">
+      A global factory for crownos_input_injector_v1 and
+      crownos_input_capture_v1 objects.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager. Objects created through it are unaffected.
+      </description>
+    </request>
+
+    <request name="create_injector">
+      <description summary="create an input injector for a seat">
+        Create an object through which input is injected into the given seat.
+        Any number of injectors may exist at once; their events are merged
+        into the seat in the order the compositor receives their frames.
+      </description>
+      <arg name="injector" type="new_id" interface="crownos_input_injector_v1"/>
+      <arg name="seat" type="object" interface="wl_seat"/>
+    </request>
+
+    <request name="create_capture">
+      <description summary="create an input capture for a seat">
+        Create an object through which the given seat's pointer and keyboard
+        input can be captured. The capture starts out disarmed.
+      </description>
+      <arg name="capture" type="new_id" interface="crownos_input_capture_v1"/>
+      <arg name="seat" type="object" interface="wl_seat"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_input_injector_v1" version="1">
+    <description summary="a virtual input device">
+      Injects events into one seat. Events are grouped into frames: every
+      request other than frame and destroy adds an event to the pending
+      frame, and frame applies the pending events in order, as one logical
+      hardware event, stamped with the frame's time. Nothing takes effect
+      before frame.
+
+      Coordinates on an output are in the output's logical coordinate space,
+      the space xdg_output reports: (0, 0) is its top-left corner and its
+      logical size is its bottom-right. The compositor maps them through the
+      output's position in the layout, so the client never needs to know the
+      layout.
+
+      Keys and buttons that are still pressed when the injector is destroyed
+      or revoked are released by the compositor, and touch points still down
+      are cancelled, so a client that crashes mid-drag does not leave a button
+      stuck.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_touch_id" value="0"
+             summary="touch_down reused an active id, or motion/up named an unknown id"/>
+      <entry name="invalid_value" value="1"
+             summary="an enum argument is out of range"/>
+    </enum>
+
+    <enum name="button_state">
+      <entry name="released" value="0" summary="the button is not pressed"/>
+      <entry name="pressed" value="1" summary="the button is pressed"/>
+    </enum>
+
+    <enum name="key_state">
+      <entry name="released" value="0" summary="the key is not pressed"/>
+      <entry name="pressed" value="1" summary="the key is pressed"/>
+    </enum>
+
+    <enum name="axis">
+      <entry name="vertical_scroll" value="0" summary="vertical axis"/>
+      <entry name="horizontal_scroll" value="1" summary="horizontal axis"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the injector">
+        Destroy the injector. A pending frame is discarded; pressed keys and
+        buttons are released and touch points cancelled.
+      </description>
+    </request>
+
+    <request name="pointer_motion">
+      <description summary="move the pointer relatively">
+        Move the pointer by dx, dy logical pixels, as a mouse would. The
+        pointer stays within the output layout.
+      </description>
+      <arg name="dx" type="fixed" summary="horizontal motion in logical pixels"/>
+      <arg name="dy" type="fixed" summary="vertical motion in logical pixels"/>
+    </request>
+
+    <request name="pointer_motion_absolute">
+      <description summary="move the pointer to a point on an output">
+        Move the pointer to x, y on the given output, as a pen or a touchscreen
+        in pointer mode would. A point outside the output is clamped onto it.
+        An output that no longer exists makes this event a no-op.
+      </description>
+      <arg name="output" type="object" interface="wl_output"/>
+      <arg name="x" type="fixed" summary="x in the output's logical space"/>
+      <arg name="y" type="fixed" summary="y in the output's logical space"/>
+    </request>
+
+    <request name="button">
+      <description summary="press or release a pointer button">
+        Press or release a pointer button, identified by its evdev code
+        (BTN_LEFT is 0x110; see linux/input-event-codes.h).
+      </description>
+      <arg name="button" type="uint" summary="evdev button code"/>
+      <arg name="state" type="uint" enum="button_state"/>
+    </request>
+
+    <request name="axis">
+      <description summary="scroll">
+        Scroll along an axis. value is the continuous amount, in the same
+        units as wl_pointer.axis. value120 is the discrete amount for wheel
+        scrolling in 120ths of a detent, as wl_pointer.axis_value120; it is
+        zero for continuous sources such as a touchpad.
+      </description>
+      <arg name="axis" type="uint" enum="axis"/>
+      <arg name="value" type="fixed" summary="continuous scroll amount"/>
+      <arg name="value120" type="int" summary="discrete amount in 120ths of a detent"/>
+    </request>
+
+    <request name="key">
+      <description summary="press or release a key">
+        Press or release a key, identified by its evdev code (KEY_A is 30).
+        The compositor translates it through the seat's keymap, so the client
+        sends physical keys, not characters.
+      </description>
+      <arg name="key" type="uint" summary="evdev key code"/>
+      <arg name="state" type="uint" enum="key_state"/>
+    </request>
+
+    <request name="touch_down">
+      <description summary="put a finger down">
+        Start a touch point at x, y on the given output. id identifies the
+        point until touch_up or touch_cancel and must not belong to a point
+        that is still down, or invalid_touch_id is raised.
+      </description>
+      <arg name="id" type="int" summary="touch point id"/>
+      <arg name="output" type="object" interface="wl_output"/>
+      <arg name="x" type="fixed" summary="x in the output's logical space"/>
+      <arg name="y" type="fixed" summary="y in the output's logical space"/>
+    </request>
+
+    <request name="touch_motion">
+      <description summary="move a finger">
+        Move touch point id to x, y on the output it went down on. An id that
+        is not down raises invalid_touch_id.
+      </description>
+      <arg name="id" type="int" summary="touch point id"/>
+      <arg name="x" type="fixed" summary="x in the output's logical space"/>
+      <arg name="y" type="fixed" summary="y in the output's logical space"/>
+    </request>
+
+    <request name="touch_up">
+      <description summary="lift a finger">
+        End touch point id. An id that is not down raises invalid_touch_id.
+      </description>
+      <arg name="id" type="int" summary="touch point id"/>
+    </request>
+
+    <request name="touch_cancel">
+      <description summary="cancel every touch point">
+        Cancel every touch point of this injector, as when a touchscreen
+        decides the contact was a palm.
+      </description>
+    </request>
+
+    <request name="frame">
+      <description summary="apply the pending events">
+        Apply every event added since the previous frame, in order, as one
+        logical hardware event. time_usec is the event time in microseconds
+        on CLOCK_MONOTONIC, split into two 32-bit halves; clients receive it,
+        truncated to milliseconds, as the time of the resulting events. A frame
+        with no events is allowed and does nothing.
+      </description>
+      <arg name="time_usec_hi" type="uint" summary="high 32 bits of the time"/>
+      <arg name="time_usec_lo" type="uint" summary="low 32 bits of the time"/>
+    </request>
+
+    <event name="revoked">
+      <description summary="the injector no longer works">
+        The compositor or the user withdrew the injector's permission, or its
+        seat went away. Later requests are ignored; the client should destroy
+        the object. This is the last event sent on the object.
+      </description>
+    </event>
+  </interface>
+
+  <interface name="crownos_input_capture_v1" version="1">
+    <description summary="takes over a seat's input at the edge of the layout">
+      A capture is in one of three states: disarmed, armed and captured.
+
+      While armed, the compositor watches the pointer. When a relative motion
+      would move it past an armed edge of the output layout — an edge of an
+      output that has no other output beyond it — the capture becomes
+      captured and entered is sent. Absolute motion, from a tablet or an
+      injector's pointer_motion_absolute, never triggers a capture, and
+      neither does motion while a pointer button is held or a compositor
+      grab (a window being dragged, a menu) owns the pointer.
+
+      While captured, the pointer does not move and no client receives
+      pointer or keyboard events; the cursor is hidden; and every motion,
+      button, axis and key event is sent to this object instead, grouped by
+      frame events. The capture ends when the client sends release, or when
+      the compositor ends it (for instance on a session lock), and either way
+      released is sent and the capture returns to armed with the same edges.
+
+      At most one capture of a seat is captured at a time. When several are
+      armed on the same edge, the one armed most recently wins.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_edges" value="0"
+             summary="arm was given bits outside the edge enum"/>
+    </enum>
+
+    <enum name="edge" bitfield="true">
+      <entry name="top" value="1" summary="the top edge of the layout"/>
+      <entry name="bottom" value="2" summary="the bottom edge of the layout"/>
+      <entry name="left" value="4" summary="the left edge of the layout"/>
+      <entry name="right" value="8" summary="the right edge of the layout"/>
+    </enum>
+
+    <enum name="button_state">
+      <entry name="released" value="0" summary="the button is not pressed"/>
+      <entry name="pressed" value="1" summary="the button is pressed"/>
+    </enum>
+
+    <enum name="key_state">
+      <entry name="released" value="0" summary="the key is not pressed"/>
+      <entry name="pressed" value="1" summary="the key is pressed"/>
+    </enum>
+
+    <enum name="axis">
+      <entry name="vertical_scroll" value="0" summary="vertical axis"/>
+      <entry name="horizontal_scroll" value="1" summary="horizontal axis"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the capture">
+        Destroy the capture. If it was captured, input returns to the local
+        seat with the pointer where it entered.
+      </description>
+    </request>
+
+    <request name="arm">
+      <description summary="choose the edges that start a capture">
+        Replace the set of armed edges. Zero disarms the capture. Bits outside
+        the edge enum raise invalid_edges. Changing the edges while captured
+        takes effect after the capture is released.
+      </description>
+      <arg name="edges" type="uint" enum="edge"/>
+    </request>
+
+    <request name="release">
+      <description summary="give input back to the local seat">
+        End the capture and put the pointer at x, y on the given output, in
+        that output's logical coordinate space (clamped onto it). Typically
+        the point on the edge the user is coming back through. An output that
+        no longer exists puts the pointer back where the capture entered.
+
+        Sending release while not captured is not an error and has no effect:
+        the compositor may have ended the capture itself just before.
+      </description>
+      <arg name="output" type="object" interface="wl_output"/>
+      <arg name="x" type="fixed" summary="x in the output's logical space"/>
+      <arg name="y" type="fixed" summary="y in the output's logical space"/>
+    </request>
+
+    <event name="entered">
+      <description summary="the pointer went through an armed edge">
+        The capture is now captured. output is the output whose edge the
+        pointer went through, edge is that edge (exactly one bit), and
+        position is where along the edge it crossed, in the output's logical
+        coordinate space: the x coordinate for the top and bottom edges, the y
+        coordinate for the left and right ones.
+
+        Keys that were already pressed when the capture began stay pressed
+        for the local clients and their releases are delivered locally; the
+        capture receives only keys pressed after entered.
+      </description>
+      <arg name="output" type="object" interface="wl_output"/>
+      <arg name="edge" type="uint" enum="edge"/>
+      <arg name="position" type="fixed" summary="crossing point along the edge"/>
+    </event>
+
+    <event name="motion">
+      <description summary="relative pointer motion">
+        Pointer motion in logical pixels, after the local acceleration
+        profile, like the motion that would have moved the local cursor.
+      </description>
+      <arg name="dx" type="fixed"/>
+      <arg name="dy" type="fixed"/>
+    </event>
+
+    <event name="button">
+      <description summary="a pointer button changed state">
+        A pointer button, by evdev code, was pressed or released.
+      </description>
+      <arg name="button" type="uint" summary="evdev button code"/>
+      <arg name="state" type="uint" enum="button_state"/>
+    </event>
+
+    <event name="axis">
+      <description summary="scroll">
+        Scrolling, in the same units as crownos_input_injector_v1.axis, so a
+        remote end can inject it unchanged.
+      </description>
+      <arg name="axis" type="uint" enum="axis"/>
+      <arg name="value" type="fixed"/>
+      <arg name="value120" type="int"/>
+    </event>
+
+    <event name="key">
+      <description summary="a key changed state">
+        A key, by evdev code, was pressed or released. The code is the
+        physical key, before any keymap.
+      </description>
+      <arg name="key" type="uint" summary="evdev key code"/>
+      <arg name="state" type="uint" enum="key_state"/>
+    </event>
+
+    <event name="modifiers">
+      <description summary="the keyboard's modifier state changed">
+        The seat's xkb modifier state, as wl_keyboard.modifiers reports it.
+        Sent once right after entered, and again whenever it changes while
+        captured.
+      </description>
+      <arg name="depressed" type="uint"/>
+      <arg name="latched" type="uint"/>
+      <arg name="locked" type="uint"/>
+      <arg name="group" type="uint"/>
+    </event>
+
+    <event name="frame">
+      <description summary="end of a group of events">
+        Ends a group of motion, button, axis, key and modifiers events that
+        belong to one hardware event. time_usec is its time in microseconds on
+        CLOCK_MONOTONIC, split into two 32-bit halves.
+      </description>
+      <arg name="time_usec_hi" type="uint"/>
+      <arg name="time_usec_lo" type="uint"/>
+    </event>
+
+    <event name="released">
+      <description summary="input is back with the local seat">
+        The capture ended, because the client sent release or because the
+        compositor ended it, and the capture is armed again. No capture events
+        follow until the next entered.
+      </description>
+    </event>
+  </interface>
+</protocol>

@@ -1,0 +1,26 @@
+[package]
+name = "crownos-protocols"
+version = "0.1.0"
+edition = "2024"
+description = "Generated bindings for the Wayland protocol extensions CrownOS defines"
+license = "MIT"
+
+# The XML is the protocol; everything under `src` is generated from it at
+# compile time by `wayland-scanner`, exactly the way `wayland-protocols` does
+# it. Nothing here is hand-written bindings, so the XML and the Rust cannot
+# drift.
+include = ["/src/**/*.rs", "/protocols/*.xml", "/Cargo.toml", "/README.md"]
+
+[features]
+default = []
+# Additive, and both may be on at once: the compositor takes `server`, the
+# shell and the system apps take `client`.
+client = ["dep:wayland-client"]
+server = ["dep:wayland-server"]
+
+[dependencies]
+bitflags = "2"
+wayland-backend = "0.3"
+wayland-scanner = "0.31"
+wayland-client = { version = "0.31", optional = true }
+wayland-server = { version = "0.31", optional = true }

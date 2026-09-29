@@ -1,0 +1,504 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_screencast_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="zero-copy, encoder-paced screen capture">
+    This protocol lets a privileged client receive the contents of an output
+    as a continuous stream of frames, rendered by the compositor straight into
+    GPU buffers the client allocated. It is designed for a hardware video
+    encoder sitting directly behind it: frames are never copied through main
+    memory, the compositor only produces a frame when something on screen
+    changed (or when the client explicitly asks for one), and the rate at
+    which frames are produced is set by how fast the client hands buffers
+    back.
+
+    The model is a small ring of client-owned dmabuf buffers, attached once
+    and reused for the lifetime of the session:
+
+    1. The client creates a session for an output. The compositor describes
+       the buffers it can render into with a constraints / format / modifier
+       / constraints_done sequence.
+    2. The client allocates up to four dmabuf wl_buffers that satisfy those
+       constraints and attaches each to a ring slot with attach_buffer.
+       Every slot starts out owned by the compositor.
+    3. The client calls start. From then on, whenever the captured content is
+       damaged and a compositor-owned slot is available, the compositor
+       renders the output into that slot and hands it to the client with
+       damage events followed by a frame event. The slot then belongs to the
+       client.
+    4. When the client is done with a slot (typically once the encoder has
+       consumed it), it gives it back with release. Only released slots are
+       ever rendered into again.
+
+    Ownership of a slot is therefore always unambiguous, and a client that
+    holds every slot pauses capture without any extra request: the compositor
+    simply has nowhere to render. That is the pacing mechanism — an encoder
+    that falls behind is never overrun, and frames are never queued up behind
+    it to add latency.
+
+    Synchronisation is implicit by default: a frame event is only sent once
+    the GPU has finished rendering into the slot, and the client must not
+    write to a slot after releasing it. A client that wants explicit
+    synchronisation instead hands over two DRM syncobj timelines with
+    set_timelines, one per direction: the compositor signals an acquire
+    point on the acquire timeline for every frame, and the client signals a
+    release point on the release timeline for every release (see
+    set_timelines).
+
+    Only privileged clients can bind the manager global. A compositor must
+    not expose it to sandboxed clients.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_screencast_manager_v1" version="1">
+    <description summary="factory for screencast sessions">
+      A global factory for crownos_screencast_session_v1 objects, and the
+      object that tells a client which optional features this compositor
+      implements.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_cursor_mode" value="0"
+             summary="the cursor_mode argument is not a value of the cursor_mode enum"/>
+    </enum>
+
+    <enum name="cursor_mode">
+      <description summary="how the pointer cursor is delivered">
+        Whether and how the pointer cursor appears in the captured stream.
+      </description>
+      <entry name="hidden" value="0"
+             summary="the cursor is neither drawn into frames nor reported"/>
+      <entry name="embedded" value="1"
+             summary="the cursor is composited into every frame"/>
+      <entry name="metadata" value="2"
+             summary="the cursor is left out of frames and reported with cursor events"/>
+    </enum>
+
+    <enum name="capability" bitfield="true">
+      <description summary="optional features of this compositor">
+        Optional features a compositor may or may not implement. A request
+        that depends on a capability the compositor did not advertise raises
+        the error named in that request's description.
+      </description>
+      <entry name="explicit_sync" value="1"
+             summary="set_timelines is supported"/>
+      <entry name="toplevel_source" value="2"
+             summary="reserved for per-window capture; never advertised by version 1"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager. Sessions created through it are unaffected and
+        keep running until they are destroyed individually.
+      </description>
+    </request>
+
+    <request name="create_output_session">
+      <description summary="capture an output">
+        Create a session capturing everything the compositor presents on the
+        given output, in the output's own orientation: the frames are upright
+        as the user sees them, whatever transform the output carries. Virtual
+        outputs created with crownos-virtual-output-v1 are captured the same
+        way.
+
+        The compositor sends the first constraints sequence immediately after
+        this request is processed. If the output is not (or no longer) usable,
+        the session is created anyway and immediately receives
+        stopped(source_destroyed), so the client never needs to special-case a
+        hotplug race.
+
+        Passing a cursor_mode that is not a value of the cursor_mode enum
+        raises invalid_cursor_mode.
+
+        Capturing a single window is reserved for a future version, which will
+        advertise the toplevel_source capability and add a
+        create_toplevel_session request.
+      </description>
+      <arg name="session" type="new_id" interface="crownos_screencast_session_v1"/>
+      <arg name="output" type="object" interface="wl_output"/>
+      <arg name="cursor_mode" type="uint" enum="cursor_mode"/>
+    </request>
+
+    <event name="capabilities">
+      <description summary="the optional features of this compositor">
+        Sent once, immediately after the manager is bound. The set does not
+        change for the lifetime of the manager object.
+      </description>
+      <arg name="capabilities" type="uint" enum="capability"/>
+    </event>
+  </interface>
+
+  <interface name="crownos_screencast_session_v1" version="1">
+    <description summary="one stream of frames from one source">
+      A capture session: a source, a ring of up to four client-owned dmabuf
+      buffers, and the stream of frames rendered into them.
+
+      A session moves through three phases. Before start, the client may
+      attach buffers and set timelines, and the compositor renders nothing.
+      After start, frames flow as described in the protocol description.
+      After stopped, the session is inert: the compositor renders nothing and
+      sends nothing more, every request other than destroy is ignored, and the
+      client should destroy the object and free its buffers.
+
+      All buffer coordinates in this interface (damage, cursor position) are
+      in pixels of the attached buffers, with the origin at the top-left
+      corner of the captured image.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_index" value="0"
+             summary="the slot index is not smaller than the ring size"/>
+      <entry name="already_attached" value="1"
+             summary="a buffer is already attached to this slot"/>
+      <entry name="invalid_buffer" value="2"
+             summary="the buffer is not a dmabuf or does not satisfy the constraints"/>
+      <entry name="already_started" value="3"
+             summary="start was sent more than once"/>
+      <entry name="not_client_owned" value="4"
+             summary="release named a slot the client does not own"/>
+      <entry name="timelines_exist" value="5"
+             summary="set_timelines was sent more than once"/>
+      <entry name="sync_unsupported" value="6"
+             summary="set_timelines was sent without the explicit_sync capability"/>
+      <entry name="invalid_timeline" value="7"
+             summary="a file descriptor is not a DRM syncobj the compositor can import"/>
+      <entry name="late_timelines" value="8"
+             summary="set_timelines was sent after start"/>
+      <entry name="invalid_release_point" value="9"
+             summary="a release point did not exceed the previous one of the session"/>
+    </enum>
+
+    <enum name="ring">
+      <entry name="max_slots" value="4" summary="the number of slots in the ring"/>
+    </enum>
+
+    <enum name="stop_reason">
+      <entry name="requested" value="0" summary="the client sent stop"/>
+      <entry name="source_destroyed" value="1"
+             summary="the captured output went away"/>
+      <entry name="revoked" value="2"
+             summary="the compositor or the user withdrew permission to capture"/>
+      <entry name="render_failed" value="3"
+             summary="the compositor could not render into the attached buffers"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="end the session">
+        Destroy the session. Rendering stops immediately. Buffers the
+        compositor owned at that point are released by the compositor as if
+        the session had stopped; the client may destroy them once this request
+        has been sent.
+      </description>
+    </request>
+
+    <request name="attach_buffer">
+      <description summary="put a buffer into a ring slot">
+        Attach a dmabuf-backed wl_buffer to ring slot index. The slot becomes
+        compositor-owned: the compositor may render into it at any time after
+        start, and the client must neither read nor write the buffer until it
+        is handed back with a frame event.
+
+        A slot is attached once and stays attached for the life of the
+        session, with one exception: every constraints sequence after the
+        first empties every slot (see constraints), after which each slot can
+        be attached again.
+
+        The buffer must have been created through zwp_linux_dmabuf_v1 and its
+        size, format and modifier must be one of the combinations the latest
+        constraints sequence advertised; otherwise invalid_buffer is raised.
+        index must be smaller than max_slots, or invalid_index is raised.
+        Attaching to a slot that already holds a buffer raises
+        already_attached.
+
+        The client keeps ownership of the wl_buffer object and must not
+        destroy it while it is attached; destroying an attached buffer makes
+        the session stop with render_failed.
+      </description>
+      <arg name="index" type="uint" summary="slot index, smaller than max_slots"/>
+      <arg name="buffer" type="object" interface="wl_buffer"/>
+    </request>
+
+    <request name="set_timelines">
+      <description summary="switch the session to explicit synchronisation">
+        Import two DRM timeline syncobjs, each exported with
+        drmSyncobjHandleToFD, and use them for every frame and release of
+        this session. They must be two distinct syncobjs: signalling a point
+        of a timeline implies that every lower point is signalled too, so the
+        two parties can only share a timeline if they agree on one order of
+        signalling, which frames and releases do not have.
+
+        The acquire timeline is signalled by the compositor only:
+        - every frame event names an acquire point on it. Acquire points
+          start above zero, strictly increase with every frame event of the
+          session, and are signalled in increasing order, each once the GPU
+          has finished rendering the frame that names it.
+        - the compositor may send a frame event before rendering has
+          finished; the client must wait for the frame's acquire point before
+          reading the slot. The client must never signal this timeline.
+
+        The release timeline is signalled by the client only:
+        - every release names a release point on it, which must be above
+          zero and above the release point of every earlier release of the
+          session, or invalid_release_point is raised.
+        - the client signals its release points in increasing order, from the
+          CPU or from GPU work, once it no longer reads the slot. The
+          compositor waits for the point to be signalled before rendering
+          into the slot again, so the client may release a slot as soon as it
+          has queued the GPU work that reads it, without waiting for that
+          work to finish. Since the timeline is ordered, signalling a point
+          also returns every slot released with a lower point. The compositor
+          never signals this timeline.
+
+        Without timelines, a frame event is sent only once rendering into the
+        slot has completed, the acquire point arguments of frame are zero, and
+        the release point arguments of release are ignored: a slot may be
+        rendered into again as soon as it is released. A session therefore
+        synchronises either explicitly in both directions or implicitly in
+        both; there is no mixed mode.
+
+        This request is only valid before start (late_timelines), at most
+        once (timelines_exist), and only if the manager advertised the
+        explicit_sync capability (sync_unsupported). A descriptor the
+        compositor cannot import raises invalid_timeline.
+      </description>
+      <arg name="acquire_timeline" type="fd"
+           summary="DRM syncobj the compositor signals frames on"/>
+      <arg name="release_timeline" type="fd"
+           summary="DRM syncobj the client signals releases on"/>
+    </request>
+
+    <request name="start">
+      <description summary="begin producing frames">
+        Start capture. The first frame is rendered as soon as a
+        compositor-owned slot is available, whether or not anything was
+        damaged, so the client always receives a complete image first.
+
+        max_fps_mhz caps the frame rate, in millihertz: 30000 means at most 30
+        frames per second. Zero means no cap beyond the source's own refresh.
+        The cap is an upper bound, not a promise: the compositor only renders
+        into a slot whose contents are out of date with the source, so a
+        static source produces no frames once every slot has caught up, unless
+        force_frame asks for one.
+
+        Sending start more than once raises already_started.
+      </description>
+      <arg name="max_fps_mhz" type="uint" summary="frame rate cap in mHz, 0 for none"/>
+    </request>
+
+    <request name="release">
+      <description summary="give a slot back to the compositor">
+        Hand slot index back to the compositor, which may render into it
+        again. With timelines set, release_point is a point on the release
+        timeline that the compositor waits for and that must exceed every
+        earlier release point of the session (see set_timelines); without
+        timelines it is ignored and should be zero.
+
+        The slot must be client-owned, i.e. handed out by a frame event and
+        not released since; otherwise not_client_owned is raised. Releasing a
+        slot that was emptied by a constraints change is not an error and has
+        no effect, because the client cannot have known.
+      </description>
+      <arg name="index" type="uint" summary="slot index"/>
+      <arg name="release_point_hi" type="uint" summary="high 32 bits of the release point"/>
+      <arg name="release_point_lo" type="uint" summary="low 32 bits of the release point"/>
+    </request>
+
+    <request name="force_frame">
+      <description summary="ask for one complete frame">
+        Render the next frame in full, even if nothing was damaged, and report
+        the whole buffer as damaged. Meant for answering a keyframe request
+        from a decoder while the screen is static.
+
+        The forced frame is produced as soon as a compositor-owned slot is
+        available and the frame rate cap allows; several force_frame requests
+        before that happens produce a single frame. Before start, the request
+        is remembered for the first frame, which is complete anyway.
+      </description>
+    </request>
+
+    <request name="stop">
+      <description summary="stop producing frames">
+        Stop capture. The compositor answers with stopped(requested); frames
+        rendered before that remain valid and client-owned. Sending stop on a
+        session that is already stopped has no effect.
+      </description>
+    </request>
+
+    <event name="constraints">
+      <description summary="the buffers the compositor can render into">
+        Begins a constraints sequence: this event, then one format event per
+        pixel format with the modifier events for that format, then
+        constraints_done. The sequence as a whole replaces any previous one.
+
+        width and height are the size, in pixels, that attached buffers must
+        have. They follow the source: a mode or scale change of the output
+        produces a new sequence.
+
+        Every sequence after the first empties the ring. Every slot, whoever
+        owns it, is detached; the compositor stops rendering until buffers
+        satisfying the new constraints are attached, and frames resume from
+        there with a complete image, as after start. Frames the client already
+        holds remain readable but can no longer be released.
+      </description>
+      <arg name="width" type="uint" summary="buffer width in pixels"/>
+      <arg name="height" type="uint" summary="buffer height in pixels"/>
+    </event>
+
+    <event name="format">
+      <description summary="a pixel format the compositor can render into">
+        A DRM fourcc code (see drm_fourcc.h) the compositor can render this
+        source into. Always followed by at least one modifier event for it.
+
+        Besides RGB formats, a compositor that can convert colour on the GPU
+        advertises NV12 (DRM_FORMAT_NV12). NV12 frames hold BT.709
+        limited-range YCbCr, with chroma sited at the centre of each 2x2 block,
+        so they can be handed to a video encoder without any conversion on the
+        client side.
+      </description>
+      <arg name="format" type="uint" summary="DRM fourcc code"/>
+    </event>
+
+    <event name="modifier">
+      <description summary="a layout modifier for an advertised format">
+        A DRM format modifier the compositor can render format into. The
+        modifier is split into two 32-bit halves. format is always one
+        announced by a preceding format event of the same sequence.
+      </description>
+      <arg name="format" type="uint" summary="DRM fourcc code"/>
+      <arg name="modifier_hi" type="uint" summary="high 32 bits of the modifier"/>
+      <arg name="modifier_lo" type="uint" summary="low 32 bits of the modifier"/>
+    </event>
+
+    <event name="constraints_done">
+      <description summary="the constraints sequence is complete">
+        Ends a constraints sequence. The client can now allocate and attach
+        buffers that match it.
+      </description>
+    </event>
+
+    <event name="damage">
+      <description summary="a region that changed">
+        A rectangle, in buffer coordinates, whose contents differ from the
+        previous frame event of this session. Any number of damage events
+        precede each frame event and apply to it; their union may be larger
+        than what actually changed, but never smaller. The first frame after
+        start, after a constraints change and after force_frame is always
+        damaged in full.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </event>
+
+    <event name="frame">
+      <description summary="a slot now holds a new frame">
+        Slot index holds a new frame and now belongs to the client until it
+        is released. The damage events sent since the previous frame event
+        describe what changed.
+
+        The timestamp is the CLOCK_MONOTONIC time at which the frame's content
+        was sampled, the same clock wp_presentation reports, split into
+        seconds (hi and lo 32 bits) and nanoseconds.
+
+        acquire_point is the point on the acquire timeline to wait on before
+        reading the slot when timelines were set (see set_timelines), and
+        zero otherwise.
+      </description>
+      <arg name="index" type="uint" summary="slot index"/>
+      <arg name="tv_sec_hi" type="uint" summary="high 32 bits of the seconds"/>
+      <arg name="tv_sec_lo" type="uint" summary="low 32 bits of the seconds"/>
+      <arg name="tv_nsec" type="uint" summary="nanoseconds, below 1000000000"/>
+      <arg name="acquire_point_hi" type="uint" summary="high 32 bits of the acquire point"/>
+      <arg name="acquire_point_lo" type="uint" summary="low 32 bits of the acquire point"/>
+    </event>
+
+    <event name="cursor_position">
+      <description summary="where the cursor is on the captured image">
+        Only sent in metadata cursor mode. The pointer's hot point moved to x,
+        y in buffer coordinates. hotspot_x and hotspot_y repeat the current
+        shape's hot point, so the top-left corner of the cursor image is at
+        (x - hotspot_x, y - hotspot_y). The position may lie partly outside
+        the buffer while the cursor straddles the output's edge.
+
+        Sent whenever the cursor moves over the captured output, independently
+        of frame events: moving the cursor in metadata mode damages nothing.
+      </description>
+      <arg name="x" type="int" summary="hot point x, buffer coordinates"/>
+      <arg name="y" type="int" summary="hot point y, buffer coordinates"/>
+      <arg name="hotspot_x" type="int" summary="hot point x within the cursor image"/>
+      <arg name="hotspot_y" type="int" summary="hot point y within the cursor image"/>
+    </event>
+
+    <event name="cursor_leave">
+      <description summary="the cursor left the captured image">
+        Only sent in metadata cursor mode. The pointer is no longer over the
+        captured output; the client should stop drawing it until the next
+        cursor_position event.
+      </description>
+    </event>
+
+    <event name="cursor_buffer">
+      <description summary="pixels of the next cursor shape">
+        Only sent in metadata cursor mode, and always immediately before the
+        cursor_shape event it belongs to. fd is a sealed, read-only memory
+        file holding the image as premultiplied ARGB8888 (little-endian, as
+        DRM_FORMAT_ARGB8888), stride bytes per row, already scaled to buffer
+        pixels. The client may map it and must close it.
+      </description>
+      <arg name="fd" type="fd" summary="sealed memory file with the pixels"/>
+      <arg name="width" type="uint" summary="image width in pixels"/>
+      <arg name="height" type="uint" summary="image height in pixels"/>
+      <arg name="stride" type="uint" summary="bytes per row"/>
+    </event>
+
+    <event name="cursor_shape">
+      <description summary="the cursor changed shape">
+        Only sent in metadata cursor mode, and only when the shape actually
+        changes. If a cursor_buffer event immediately preceded this one, its
+        pixels are the new shape; otherwise the cursor has no image (a client
+        hid it) and nothing should be drawn until the next cursor_shape.
+
+        serial increases with every shape change of the session. hotspot_x
+        and hotspot_y are the hot point within the image, in buffer pixels.
+      </description>
+      <arg name="serial" type="uint" summary="shape generation"/>
+      <arg name="hotspot_x" type="int"/>
+      <arg name="hotspot_y" type="int"/>
+    </event>
+
+    <event name="stopped">
+      <description summary="the session ended">
+        The session stopped and will produce nothing more. Slots the client
+        owns stay readable; the client should destroy the session and then its
+        buffers. This is the last event sent on the object.
+      </description>
+      <arg name="reason" type="uint" enum="stop_reason"/>
+    </event>
+  </interface>
+</protocol>
