@@ -11,6 +11,7 @@
 #[macro_use]
 mod generate;
 
+pub mod app_icons;
 pub mod background_effects;
 pub mod input;
 pub mod screencast;

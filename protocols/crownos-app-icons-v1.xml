@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_app_icons_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="where an application's icon is shown">
+    This protocol lets a launcher, such as a dock, tell the compositor where
+    it shows the icon of an application. The compositor uses the icon as the
+    spatial origin of that application's windows: a window launched from the
+    icon grows out of it, and a window that is minimized or closed shrinks
+    back into it.
+
+    Applications are identified by the app_id their toplevels set, compared
+    without regard to ASCII case.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_app_icon_manager_v1" version="1">
+    <description summary="factory for application icons">
+      A global factory for crownos_app_icon_v1 objects.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager. Icons created through it are unaffected.
+      </description>
+    </request>
+
+    <request name="get_app_icon">
+      <description summary="show an application's icon on a surface">
+        Create an icon for the application app_id, drawn on surface. A
+        surface may carry the icons of any number of applications, and an
+        application may have icons on several surfaces; the compositor uses
+        the one on the output the window is on.
+
+        The icon has no rectangle until set_rectangle is called, and until
+        then the compositor does not use it.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_app_icon_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+      <arg name="app_id" type="string"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_app_icon_v1" version="1">
+    <description summary="one application's icon">
+      The icon of one application on one surface.
+
+      If the wl_surface is destroyed, this object becomes inert.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_rectangle" value="0"
+        summary="width or height is not positive, or the radius is negative"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="the icon is no longer shown">
+        Destroy the icon. Windows of the application no longer grow out of
+        or shrink into it.
+      </description>
+    </request>
+
+    <request name="set_rectangle">
+      <description summary="where the icon is drawn">
+        Set the rectangle the icon occupies, in surface-local coordinates,
+        and the radius of its rounded corners. This is where the icon rests
+        when the surface is fully shown: a surface that slides itself out of
+        view does not need to update it.
+
+        Takes effect immediately.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="corner_radius" type="fixed"/>
+    </request>
+
+    <request name="activate">
+      <description summary="the user activated the icon">
+        The user clicked or tapped the icon.
+
+        If the application has windows, the compositor restores the ones that
+        are minimized, growing them out of the icon, and focuses the most
+        recent one. Otherwise it replies with the launch event, and the
+        launcher is expected to start the application.
+      </description>
+    </request>
+
+    <event name="launch">
+      <description summary="start the application">
+        The application has no window: the launcher should start it. The
+        first window of the application that is mapped shortly after grows
+        out of this icon.
+      </description>
+    </event>
+  </interface>
+</protocol>

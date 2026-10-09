@@ -19,6 +19,7 @@ crownos-protocols = { version = "0.1", features = ["client"] }  # apps
 | `crownos_screencast_v1` | `crownos_screencast_manager_v1`, `crownos_screencast_session_v1` | Zero-copy capture of an output into a ring of client-owned dmabufs (RGB or GPU-converted NV12), rendered only on damage or `force_frame` and paced by the client releasing slots; optional explicit sync through two DRM syncobj timelines, one per direction; cursor embedded, hidden or sent as metadata. Privileged. |
 | `crownos_virtual_output_v1` | `crownos_virtual_output_manager_v1`, `crownos_virtual_output_v1` | Outputs with no display behind them — a tablet as a second monitor, a headless remote desktop — that are ordinary heads to the rest of the session and whose frame clock is driven by the client's `request_frame`. Privileged. |
 | `crownos_input_v1` | `crownos_input_manager_v1`, `crownos_input_injector_v1`, `crownos_input_capture_v1` | Injecting pointer, keyboard and touch events into a seat through the normal input path, and capturing a seat's input once the pointer is pushed through an armed edge of the layout (shared keyboard and mouse between machines). Privileged. |
+| `crownos_app_icons_v1` | `crownos_app_icon_manager_v1`, `crownos_app_icon_v1` | Where a launcher such as the dock shows each application's icon, so the compositor grows the application's windows out of it and shrinks them back into it; activating an icon restores and focuses the application's windows, or asks the launcher to start it with `launch`. Privileged. |
 
 ## C bindings
 
