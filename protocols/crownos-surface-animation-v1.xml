@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_surface_animation_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="compositor-driven spring animations of subsurfaces">
+    This protocol lets a client hand the animation of a subsurface's
+    transform and opacity to the compositor. The client describes where a
+    property should go and the spring that takes it there; the compositor
+    evaluates the spring on every output frame and draws the subsurface
+    accordingly, so the client does not have to render a new buffer for every
+    frame of the motion.
+
+    Springs are closed-form damped harmonic oscillators described by a
+    response (the period of the undamped oscillation, in seconds) and a
+    damping ratio (1 is critically damped, below 1 overshoots). Client and
+    compositor evaluate the same formula from the same start time, so a
+    client can predict exactly where the compositor draws the surface at any
+    instant.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_surface_animation_manager_v1" version="1">
+    <description summary="factory for animated subsurfaces">
+      A global factory for crownos_animated_surface_v1 objects.
+    </description>
+
+    <enum name="error">
+      <entry name="not_subsurface" value="0"
+        summary="the surface does not have the wl_subsurface role"/>
+      <entry name="already_animated" value="1"
+        summary="the surface already has an animated surface object"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager. Objects created through it are unaffected.
+      </description>
+    </request>
+
+    <request name="get_animated_surface">
+      <description summary="animate a subsurface">
+        Create an animated surface object for a subsurface.
+
+        The surface must already have the wl_subsurface role, otherwise the
+        not_subsurface protocol error is raised. A surface can have at most
+        one animated surface object at a time; asking for a second one raises
+        the already_animated protocol error.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_animated_surface_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_animated_surface_v1" version="1">
+    <description summary="compositor-side animation of one subsurface">
+      Animates the transform and opacity of one subsurface.
+
+      Every request is double-buffered: it takes effect on the next
+      wl_surface.commit of the subsurface, which follows the usual
+      synchronized or desynchronized subsurface rules.
+
+      The transform is applied on top of the position set through
+      wl_subsurface.set_position: the surface is scaled and rotated about its
+      own center, then translated. Child subsurfaces inherit the transform
+      and the opacity of their parent.
+
+      If the wl_surface is destroyed, this object becomes inert.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_property" value="0" summary="unknown property"/>
+      <entry name="invalid_spring" value="1"
+        summary="response is not positive or damping ratio is negative"/>
+    </enum>
+
+    <enum name="property">
+      <description summary="an animatable property">
+        The properties a client can animate, with the value each one rests at
+        when it was never set.
+      </description>
+      <entry name="translate_x" value="0"
+        summary="horizontal offset in surface-local coordinates, rests at 0"/>
+      <entry name="translate_y" value="1"
+        summary="vertical offset in surface-local coordinates, rests at 0"/>
+      <entry name="scale" value="2"
+        summary="uniform scale about the surface center, rests at 1"/>
+      <entry name="rotation" value="3"
+        summary="clockwise rotation in degrees about the surface center, rests at 0"/>
+      <entry name="opacity" value="4"
+        summary="opacity multiplier between 0 and 1, rests at 1"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop animating the surface">
+        Destroy the object. On the next commit every property returns to its
+        resting value and running animations stop without a settled event.
+      </description>
+    </request>
+
+    <request name="animate">
+      <description summary="spring a property toward a target">
+        Animate a property toward target with a spring.
+
+        The animation starts at start_time, a CLOCK_MONOTONIC timestamp in
+        microseconds split into its high and low 32 bits. A start time of 0
+        means the moment the compositor applies the commit.
+
+        If the property is already animating, the new animation continues
+        from the value and velocity the running one has at start_time, and
+        the interrupted event reports them. Otherwise it starts from the
+        current value at rest.
+
+        The compositor sends settled once the property reaches target and
+        stops moving.
+      </description>
+      <arg name="property" type="uint" enum="property"/>
+      <arg name="target" type="fixed"/>
+      <arg name="response_seconds" type="fixed"
+        summary="period of the undamped oscillation, must be positive"/>
+      <arg name="damping_ratio" type="fixed"
+        summary="1 is critically damped, below 1 overshoots, must not be negative"/>
+      <arg name="start_time_hi" type="uint"/>
+      <arg name="start_time_lo" type="uint"/>
+    </request>
+
+    <request name="set">
+      <description summary="jump a property to a value">
+        Set a property to value immediately, cancelling any animation of it
+        without an event.
+      </description>
+      <arg name="property" type="uint" enum="property"/>
+      <arg name="value" type="fixed"/>
+    </request>
+
+    <event name="settled">
+      <description summary="an animation finished">
+        The animation of property reached its target and stopped moving.
+        value is where it came to rest.
+      </description>
+      <arg name="property" type="uint" enum="property"/>
+      <arg name="value" type="fixed"/>
+    </event>
+
+    <event name="interrupted">
+      <description summary="a running animation was retargeted">
+        A new animate request replaced a running animation of property.
+        value and velocity (units per second) are the state the replaced
+        animation had at the new animation's start time, which is where the
+        new one continues from.
+      </description>
+      <arg name="property" type="uint" enum="property"/>
+      <arg name="value" type="fixed"/>
+      <arg name="velocity" type="fixed"/>
+    </event>
+  </interface>
+</protocol>

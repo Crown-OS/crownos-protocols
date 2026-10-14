@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_session_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="the session agent's link to the compositor">
+    The compositor runs as its own system user and cannot read the user's
+    files or start programs as the user. Each logged-in user runs one session
+    agent, crown-session, which does both on the compositor's behalf: it
+    pushes the user's configuration and starts whatever the compositor asks
+    for, from keybindings or the startup list.
+
+    The global is only advertised to clients on a user session's own
+    listener that did not come through a security context.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_session_v1" version="1">
+    <description summary="one user session's agent">
+      A single global per session. Binding it twice from one client is a
+      protocol error.
+    </description>
+
+    <enum name="error">
+      <entry name="already_bound" value="0" summary="the global was bound twice"/>
+      <entry name="invalid_config" value="1" summary="the config payload could not be read"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop being the session agent"/>
+    </request>
+
+    <request name="set_config">
+      <description summary="replace the user's configuration">
+        A file descriptor to a sealed memfd holding the configuration bundle
+        (RON, as crownpositor's config crate encodes it), size bytes long.
+        Sent once after binding and again whenever a config file changes.
+      </description>
+      <arg name="fd" type="fd"/>
+      <arg name="size" type="uint"/>
+    </request>
+
+    <request name="ready">
+      <description summary="the startup programs have been started">
+        The compositor may start revealing the desktop once the session's
+        wallpaper and panels have drawn, or after a short timeout.
+      </description>
+    </request>
+
+    <request name="lock">
+      <description summary="lock this session now"/>
+    </request>
+
+    <event name="spawn">
+      <description summary="start a program as the user">
+        argv is NUL-separated, each argument followed by one NUL.
+      </description>
+      <arg name="argv" type="array"/>
+    </event>
+
+    <event name="save_outputs">
+      <description summary="persist the output configuration">
+        The user rearranged or reconfigured monitors. fd is a memfd of size
+        bytes holding the RON tuple (outputs, output_layouts), to be merged
+        into the user's compositor.ron.
+      </description>
+      <arg name="fd" type="fd"/>
+      <arg name="size" type="uint"/>
+    </event>
+
+    <event name="logout">
+      <description summary="end the session">
+        The agent should stop its programs and exit, which closes the session.
+      </description>
+    </event>
+  </interface>
+</protocol>

@@ -11,10 +11,15 @@
 #[macro_use]
 mod generate;
 
+pub mod agent_access;
 pub mod app_icons;
 pub mod background_effects;
 pub mod input;
+pub mod plugin_host;
 pub mod screencast;
+pub mod session;
+pub mod surface_animation;
+pub mod surface_visibility;
 pub mod virtual_output;
 
 #[cfg(all(test, feature = "server"))]
@@ -125,6 +130,65 @@ mod tests {
             Edge::Top | Edge::Bottom | Edge::Left | Edge::Right
         );
     }
+
+    #[test]
+    fn the_surface_visibility_interfaces_are_named_as_expected() {
+        use crate::surface_visibility::v1::server::{
+            crownos_surface_visibility_manager_v1::CrownosSurfaceVisibilityManagerV1,
+            crownos_surface_visibility_v1::{CrownosSurfaceVisibilityV1, State},
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosSurfaceVisibilityManagerV1::interface().name,
+            "crownos_surface_visibility_manager_v1"
+        );
+        assert_eq!(
+            CrownosSurfaceVisibilityV1::interface().name,
+            "crownos_surface_visibility_v1"
+        );
+        assert_eq!(State::Visible as u32, 0);
+        assert_eq!(State::Occluded as u32, 1);
+        assert_eq!(State::Hidden as u32, 2);
+    }
+
+    #[test]
+    fn the_agent_access_interfaces_are_named_as_expected() {
+        use crate::agent_access::v1::server::{
+            crownos_agent_access_manager_v1::CrownosAgentAccessManagerV1,
+            crownos_agent_access_v1::CrownosAgentAccessV1,
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosAgentAccessManagerV1::interface().name,
+            "crownos_agent_access_manager_v1"
+        );
+        assert_eq!(
+            CrownosAgentAccessV1::interface().name,
+            "crownos_agent_access_v1"
+        );
+    }
+
+    #[test]
+    fn the_surface_animation_interfaces_are_named_as_expected() {
+        use crate::surface_animation::v1::server::{
+            crownos_animated_surface_v1::{CrownosAnimatedSurfaceV1, Property},
+            crownos_surface_animation_manager_v1::CrownosSurfaceAnimationManagerV1,
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosSurfaceAnimationManagerV1::interface().name,
+            "crownos_surface_animation_manager_v1"
+        );
+        assert_eq!(
+            CrownosAnimatedSurfaceV1::interface().name,
+            "crownos_animated_surface_v1"
+        );
+        assert_eq!(Property::TranslateX as u32, 0);
+        assert_eq!(Property::Opacity as u32, 4);
+    }
 }
 
 #[cfg(all(test, feature = "client"))]
@@ -147,6 +211,15 @@ mod client_tests {
             crate::input::v1::client::crownos_input_capture_v1::CrownosInputCaptureV1::interface()
                 .name,
             "crownos_input_capture_v1"
+        );
+
+        assert_eq!(
+            crate::surface_visibility::v1::client::crownos_surface_visibility_v1::CrownosSurfaceVisibilityV1::interface().name,
+            "crownos_surface_visibility_v1"
+        );
+        assert_eq!(
+            crate::agent_access::v1::client::crownos_agent_access_v1::CrownosAgentAccessV1::interface().name,
+            "crownos_agent_access_v1"
         );
     }
 

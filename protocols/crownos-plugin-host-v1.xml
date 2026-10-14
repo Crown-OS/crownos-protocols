@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_plugin_host_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="the link between crownplugind and the compositor">
+    crownplugind runs the user's themes and plugins. This protocol is how it
+    reaches the compositor: it runs compositor actions on a plugin's behalf,
+    hears about windows and workspaces, learns when a plugin's keybinding
+    fires, and hands over everything the lock screen draws, because the
+    compositor cannot read the user's files.
+
+    The global is privileged. It is only advertised to an unsandboxed client
+    on the listener of the active, unlocked user. The lock requests are the
+    one exception to "not while locked": they are accepted while that user's
+    session is locked, because they carry display-only data, and their content
+    is never shown on the login screen of another user.
+
+    crownplugind has already checked every plugin capability before it sends
+    a request; the compositor still refuses actions no plugin may run.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_plugin_host_v1" version="1">
+    <description summary="crownplugind's handle on the compositor">
+      A single global. Binding it twice from one client is a protocol error.
+    </description>
+
+    <enum name="error">
+      <entry name="already_bound" value="0" summary="the global was bound twice"/>
+      <entry name="invalid_payload" value="1"
+        summary="a payload fd could not be read, or did not decode"/>
+      <entry name="too_large" value="2" summary="a payload exceeds its limit"/>
+    </enum>
+
+    <enum name="watch" bitfield="true">
+      <entry name="workspaces" value="1" summary="workspace_changed"/>
+      <entry name="windows" value="2"
+        summary="window_opened, window_changed, window_closed, window_focused"/>
+    </enum>
+
+    <enum name="action_result">
+      <entry name="done" value="0" summary="the action ran"/>
+      <entry name="invalid" value="1" summary="the action did not parse"/>
+      <entry name="refused" value="2"
+        summary="plugins may not run this action, or the session is locked"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="disconnect from the compositor"/>
+    </request>
+
+    <request name="watch">
+      <description summary="choose which events to receive">
+        Replaces the set of event groups this client receives. Starts empty.
+        Choosing windows sends a window_opened for every existing window,
+        then a window_focused.
+      </description>
+      <arg name="events" type="uint" enum="watch"/>
+    </request>
+
+    <request name="run_action">
+      <description summary="run a compositor action">
+        Runs an action written in the compositor's keybinding action grammar,
+        e.g. "focus-workspace 2". quit, switch-vt and spawn are always
+        refused; crownplugind spawns programs itself. Answered by one
+        action_done with the same serial.
+      </description>
+      <arg name="serial" type="uint"/>
+      <arg name="action" type="string"/>
+    </request>
+
+    <request name="set_lock_scene">
+      <description summary="replace the lock screen scene">
+        fd is a memfd holding size bytes: a postcard-encoded LockScene, at
+        most 256 KiB. Every asset the scene references must have been put
+        first.
+      </description>
+      <arg name="fd" type="fd"/>
+      <arg name="size" type="uint"/>
+    </request>
+
+    <request name="set_lock_slot">
+      <description summary="update one lock screen slot">
+        fd is a memfd holding size bytes: a postcard-encoded view Tree for
+        the slot named id, which the current scene must declare. Sent at most
+        30 times a second per slot.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="fd" type="fd"/>
+      <arg name="size" type="uint"/>
+    </request>
+
+    <request name="put_lock_asset">
+      <description summary="hand over an image the lock screen draws">
+        fd is a memfd holding size bytes whose SHA-256, in lowercase hex, is
+        id. Trees reference it as an image src of "asset:" followed by id. At
+        most 32 MiB per asset and 64 MiB per user; the compositor checks the
+        hash and drops assets no scene references.
+      </description>
+      <arg name="id" type="string"/>
+      <arg name="fd" type="fd"/>
+      <arg name="size" type="uint"/>
+    </request>
+
+    <event name="action_done">
+      <description summary="the outcome of run_action"/>
+      <arg name="serial" type="uint"/>
+      <arg name="result" type="uint" enum="action_result"/>
+    </event>
+
+    <event name="plugin_action">
+      <description summary="a plugin keybinding fired">
+        The user pressed a chord bound to "plugin PLUGIN NAME".
+      </description>
+      <arg name="plugin" type="string"/>
+      <arg name="name" type="string"/>
+    </event>
+
+    <event name="lock_state">
+      <description summary="whether the user's session is locked">
+        Sent on bind and whenever it changes, so crownplugind can stop work
+        nobody can see. locked is 1 when locked, 0 otherwise.
+      </description>
+      <arg name="locked" type="uint"/>
+    </event>
+
+    <event name="workspace_changed">
+      <description summary="the active workspace of an output changed">
+        index is zero-based.
+      </description>
+      <arg name="output" type="string"/>
+      <arg name="index" type="uint"/>
+    </event>
+
+    <event name="window_opened">
+      <description summary="a window was mapped"/>
+      <arg name="id" type="uint" summary="unique for the compositor's lifetime"/>
+      <arg name="app_id" type="string"/>
+      <arg name="title" type="string"/>
+      <arg name="workspace" type="uint"/>
+    </event>
+
+    <event name="window_changed">
+      <description summary="a window's app id or title changed"/>
+      <arg name="id" type="uint"/>
+      <arg name="app_id" type="string"/>
+      <arg name="title" type="string"/>
+    </event>
+
+    <event name="window_closed">
+      <description summary="a window was unmapped"/>
+      <arg name="id" type="uint"/>
+    </event>
+
+    <event name="window_focused">
+      <description summary="keyboard focus moved">
+        id is 0 when no window has focus.
+      </description>
+      <arg name="id" type="uint"/>
+    </event>
+  </interface>
+</protocol>

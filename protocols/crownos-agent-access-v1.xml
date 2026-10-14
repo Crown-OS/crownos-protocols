@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_agent_access_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="permission to expose an app's UI to AI agents">
+    This protocol lets an application ask for permission to expose its user
+    interface to AI agents, for instance through an MCP server that lets an
+    agent read the app's accessibility tree and act on it. Exposing a UI to
+    an agent hands it everything the user sees and can do in the app, so the
+    decision belongs to the user, and the compositor is the party that can ask
+    them in a way the application cannot spoof.
+
+    The application describes itself and why it wants access. The compositor
+    decides, by policy or by asking the user, and answers with a grant
+    carrying an opaque token, or a denial. A grant lasts until the application
+    destroys the object or the compositor revokes it. The token is what the
+    application presents to the agent bridge; a bridge only serves apps whose
+    token the compositor vouches for.
+
+    Only privileged clients can bind the manager global. A compositor must
+    not expose it to sandboxed clients.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_agent_access_manager_v1" version="1">
+    <description summary="factory for agent access requests">
+      A global factory for crownos_agent_access_v1 objects.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager. Requests made through it are unaffected.
+      </description>
+    </request>
+
+    <request name="request_access">
+      <description summary="ask for agent access">
+        Ask for permission to expose the application's UI to AI agents. The
+        compositor answers on the new object with granted or denied, possibly
+        much later if it asks the user.
+
+        app_id identifies the application to the user and should match the
+        app_id of the application's toplevels. A request with an empty app_id
+        is denied, since the user could not be told who is asking. reason is a
+        short, human-readable explanation the compositor may show the user
+        when asking, and may be empty.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_agent_access_v1"/>
+      <arg name="app_id" type="string" summary="the application's app_id"/>
+      <arg name="reason" type="string" summary="why the application wants access"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_agent_access_v1" version="1">
+    <description summary="one agent access request">
+      The outcome of one request_access. Exactly one of granted or denied is
+      sent first; revoked may follow granted. After denied or revoked no
+      further events are sent and the object should be destroyed.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="give up the request or the grant">
+        Destroy the object. A pending request is withdrawn and a grant ends:
+        its token is no longer valid.
+      </description>
+    </request>
+
+    <event name="granted">
+      <description summary="access was granted">
+        The application may expose its UI to agents. token is an opaque
+        string identifying this grant, valid until the object is destroyed or
+        revoked is sent. Clients must not interpret it.
+      </description>
+      <arg name="token" type="string" summary="opaque grant token"/>
+    </event>
+
+    <event name="denied">
+      <description summary="access was refused">
+        The application must not expose its UI to agents. This is the last
+        event sent on the object.
+      </description>
+    </event>
+
+    <event name="revoked">
+      <description summary="a granted access was withdrawn">
+        The grant ended, for example because the user withdrew it. The token
+        is no longer valid and the application must stop exposing its UI to
+        agents. This is the last event sent on the object.
+      </description>
+    </event>
+  </interface>
+</protocol>
