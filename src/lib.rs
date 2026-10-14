@@ -68,6 +68,7 @@ mod tests {
             crownos_screencast_manager_v1::Capability::all(),
             crownos_screencast_manager_v1::Capability::ExplicitSync
                 | crownos_screencast_manager_v1::Capability::ToplevelSource
+                | crownos_screencast_manager_v1::Capability::WorkspaceSource
         );
         assert_eq!(crownos_screencast_session_v1::Ring::MaxSlots as u32, 4);
         assert_eq!(

@@ -75,7 +75,7 @@
     only be done by creating a new major version of the extension.
   </description>
 
-  <interface name="crownos_screencast_manager_v1" version="1">
+  <interface name="crownos_screencast_manager_v1" version="2">
     <description summary="factory for screencast sessions">
       A global factory for crownos_screencast_session_v1 objects, and the
       object that tells a client which optional features this compositor
@@ -85,6 +85,8 @@
     <enum name="error">
       <entry name="invalid_cursor_mode" value="0"
              summary="the cursor_mode argument is not a value of the cursor_mode enum"/>
+      <entry name="unsupported_source" value="1"
+             summary="the source kind was not advertised as a capability"/>
     </enum>
 
     <enum name="cursor_mode">
@@ -108,7 +110,9 @@
       <entry name="explicit_sync" value="1"
              summary="set_timelines is supported"/>
       <entry name="toplevel_source" value="2"
-             summary="reserved for per-window capture; never advertised by version 1"/>
+             summary="create_toplevel_session is supported"/>
+      <entry name="workspace_source" value="4" since="2"
+             summary="create_workspace_session is supported"/>
     </enum>
 
     <request name="destroy" type="destructor">
@@ -135,12 +139,60 @@
         Passing a cursor_mode that is not a value of the cursor_mode enum
         raises invalid_cursor_mode.
 
-        Capturing a single window is reserved for a future version, which will
-        advertise the toplevel_source capability and add a
-        create_toplevel_session request.
+        Single windows and whole workspaces are captured with
+        create_toplevel_session and create_workspace_session.
       </description>
       <arg name="session" type="new_id" interface="crownos_screencast_session_v1"/>
       <arg name="output" type="object" interface="wl_output"/>
+      <arg name="cursor_mode" type="uint" enum="cursor_mode"/>
+    </request>
+
+    <request name="create_toplevel_session" since="2">
+      <description summary="capture one window">
+        Create a session capturing one window: its contents, its popups and
+        the frame the compositor draws round it, cropped to the frame and
+        upright, wherever the window is — on another workspace or covered by
+        other windows. Nothing else on screen is ever part of the image.
+
+        toplevel_identifier is the identifier an
+        ext_foreign_toplevel_handle_v1 announced for the window. The buffer
+        size follows the window: resizing it produces a new constraints
+        sequence. The cursor is only drawn or reported while it is over the
+        window.
+
+        A window that does not exist, or that closes later, ends the session
+        with stopped(source_destroyed), exactly as for an output.
+
+        Raises unsupported_source unless the manager advertised the
+        toplevel_source capability, and invalid_cursor_mode as for
+        create_output_session.
+      </description>
+      <arg name="session" type="new_id" interface="crownos_screencast_session_v1"/>
+      <arg name="toplevel_identifier" type="string"
+           summary="identifier from ext_foreign_toplevel_handle_v1"/>
+      <arg name="cursor_mode" type="uint" enum="cursor_mode"/>
+    </request>
+
+    <request name="create_workspace_session" since="2">
+      <description summary="capture one workspace">
+        Create a session capturing one workspace as its output would show it
+        were it the active one: the wallpaper and the workspace's windows,
+        but not panels, notifications or other overlays. The workspace keeps
+        being captured while the user looks at another one.
+
+        workspace_id is the id an ext_workspace_handle_v1 announced. The
+        buffer size is that of the workspace's output. The cursor is only
+        drawn or reported while the workspace is the one on screen.
+
+        A workspace that does not exist, or that goes away later, ends the
+        session with stopped(source_destroyed).
+
+        Raises unsupported_source unless the manager advertised the
+        workspace_source capability, and invalid_cursor_mode as for
+        create_output_session.
+      </description>
+      <arg name="session" type="new_id" interface="crownos_screencast_session_v1"/>
+      <arg name="workspace_id" type="string" summary="id from ext_workspace_handle_v1"/>
       <arg name="cursor_mode" type="uint" enum="cursor_mode"/>
     </request>
 
@@ -153,7 +205,7 @@
     </event>
   </interface>
 
-  <interface name="crownos_screencast_session_v1" version="1">
+  <interface name="crownos_screencast_session_v1" version="2">
     <description summary="one stream of frames from one source">
       A capture session: a source, a ring of up to four client-owned dmabuf
       buffers, and the stream of frames rendered into them.
@@ -200,7 +252,7 @@
     <enum name="stop_reason">
       <entry name="requested" value="0" summary="the client sent stop"/>
       <entry name="source_destroyed" value="1"
-             summary="the captured output went away"/>
+             summary="the captured output, window or workspace went away"/>
       <entry name="revoked" value="2"
              summary="the compositor or the user withdrew permission to capture"/>
       <entry name="render_failed" value="3"
