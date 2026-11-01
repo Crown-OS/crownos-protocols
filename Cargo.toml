@@ -9,7 +9,7 @@ license = "MIT"
 # compile time by `wayland-scanner`, exactly the way `wayland-protocols` does
 # it. Nothing here is hand-written bindings, so the XML and the Rust cannot
 # drift.
-include = ["/src/**/*.rs", "/protocols/*.xml", "/Cargo.toml", "/README.md"]
+include = ["/src/**/*.rs", "/protocols/*.xml", "/build.rs", "/Cargo.toml", "/README.md"]
 
 [features]
 default = []
