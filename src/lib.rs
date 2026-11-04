@@ -49,7 +49,34 @@ mod tests {
         );
         assert_eq!(
             Capability::all(),
-            Capability::Blur | Capability::Shadow | Capability::CornerRadius | Capability::Border
+            Capability::Blur
+                | Capability::Shadow
+                | Capability::CornerRadius
+                | Capability::Border
+                | Capability::CompositedBlur
+        );
+    }
+
+    /// A child object takes its manager's version, so both effect interfaces
+    /// move together: a version 2 surface object is how the compositor tells
+    /// a client that knows about `composited_blur` from one that does not.
+    #[test]
+    fn the_effect_interfaces_share_a_version() {
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            crownos_background_effect_manager_v1::CrownosBackgroundEffectManagerV1::interface()
+                .version,
+            2
+        );
+        assert_eq!(
+            crownos_background_effect_surface_v1::CrownosBackgroundEffectSurfaceV1::interface()
+                .version,
+            2
+        );
+        assert_eq!(
+            crownos_background_effect_manager_v1::Capability::CompositedBlur.bits(),
+            16
         );
     }
 

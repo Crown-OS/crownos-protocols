@@ -149,7 +149,7 @@
   <!-- EFFECT MANAGEMENT: Applying effects to surfaces           -->
   <!-- ========================================================= -->
 
-  <interface name="crownos_background_effect_manager_v1" version="1">
+  <interface name="crownos_background_effect_manager_v1" version="2">
     <description summary="manager for background effects">
       A global factory for crownos_background_effect_surface_v1 objects, and the
       object that tells a client which effects this compositor will actually
@@ -167,11 +167,17 @@
         capability because the user turned the effect off, because the
         renderer could not compile the shaders, or because it is running on
         battery.
+
+        composited_blur is not an effect of its own but a change to how the
+        surface is drawn over its blur; set_blur describes it. It comes and
+        goes with blur, and a manager bound at version 1 is never sent it.
       </description>
       <entry name="blur" value="1" summary="set_blur is honoured"/>
       <entry name="shadow" value="2" summary="set_shadow is honoured"/>
       <entry name="corner_radius" value="4" summary="set_corner_radius is honoured"/>
       <entry name="border" value="8" summary="set_border is honoured"/>
+      <entry name="composited_blur" value="16" since="2"
+             summary="the surface is drawn over its blur and cut with it once"/>
     </enum>
 
     <request name="destroy" type="destructor">
@@ -208,7 +214,7 @@
     </event>
   </interface>
 
-  <interface name="crownos_background_effect_surface_v1" version="1">
+  <interface name="crownos_background_effect_surface_v1" version="2">
     <description summary="manage background effects for a surface">
       Sets the material effects rendered for one wl_surface.
 
@@ -293,6 +299,25 @@
         before the tint is applied. 1.0 leaves it alone, values above 1.0 are
         the vibrancy that makes a colour show through frosted glass, 0.0 is
         greyscale. A negative value raises an invalid_saturation error.
+
+        Since version 2, while composited_blur is advertised, the blur of a
+        layer surface (one with the zwlr_layer_surface_v1 role) whose shape is
+        a single primitive — a null shape is one — is composited with the
+        surface instead of drawn under it. Inside the rectangle that bounds the
+        shape the compositor draws the surface's own pixels over the glass and
+        cuts both with the shape's one antialiased edge; outside that rectangle
+        the surface is drawn as it is. Drawn under the surface, the edge is
+        antialiased twice, once by each side, and an edge pixel mixes the
+        surface, the glass and what lies behind them in the wrong proportions;
+        composited, the shape's antialiasing is applied exactly once. A client
+        should therefore paint the body it lays on the glass hard-edged, out to
+        the shape's bounding rectangle, which it should keep on whole pixels,
+        and leave the edge to the compositor.
+
+        Any other surface, and a shape of several primitives, is drawn as in
+        version 1. Whether a commit is composited follows the capabilities in
+        effect when it is applied, so a client that repaints its body when
+        composited_blur comes or goes has that frame drawn the matching way.
       </description>
       <arg name="shape" type="object" interface="crownos_shape_v1" allow-null="true"
            summary="the shape to blur; null means the entire surface"/>
