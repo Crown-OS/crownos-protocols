@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_android_shell_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="Android task windows that behave like native windows">
+    This protocol lets the CrownOS Android runtime describe the Android task
+    behind each of its xdg_toplevels, so the compositor can treat the window
+    like any other application window and still offer what Android apps need:
+    a Back button, a fixed size for apps that cannot resize, and the app's
+    own title color.
+
+    Everything else uses standard protocols. Size comes from xdg_toplevel
+    configure, minimum and maximum size from xdg_toplevel.set_min_size and
+    set_max_size, identity from xdg_toplevel.set_app_id, which is
+    "waydroid." followed by the Android package name, and visibility from
+    the xdg_toplevel suspended state.
+
+    The compositor only advertises the manager to the CrownOS Android
+    runtime: the hwcomposer connection that comes through the runtime's
+    security context, and the runtime daemon itself.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_android_shell_manager_v1" version="1">
+    <description summary="attach Android task details to toplevels">
+      A global the CrownOS Android runtime binds to describe its windows.
+    </description>
+
+    <enum name="error">
+      <entry name="already_extended" value="0"
+             summary="the xdg_toplevel already has a crownos_android_toplevel_v1"/>
+      <entry name="not_allowed" value="1"
+             summary="this client may not make placeholders"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Objects created through the manager stay valid.
+      </description>
+    </request>
+
+    <request name="get_android_toplevel">
+      <description summary="describe the Android task behind a toplevel">
+        Creates the Android extension of an xdg_toplevel. A toplevel has at
+        most one; asking for a second is the already_extended error. Send it
+        before the toplevel's first commit with a buffer, so the compositor
+        can place the window as an Android window from the start.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_android_toplevel_v1"/>
+      <arg name="toplevel" type="object" interface="xdg_toplevel"/>
+    </request>
+
+    <request name="mark_placeholder">
+      <description summary="mark a toplevel as the stand-in for a launching app">
+        Marks a toplevel as the splash window of an Android app that is still
+        starting. When a toplevel with the same app_id maps from the Android
+        runtime, the compositor gives it the placeholder's place, size and
+        state, then sends xdg_toplevel.close to the placeholder. The
+        compositor ignores the mark after 120 seconds.
+
+        Only the runtime daemon may send this; anyone else gets the
+        not_allowed error.
+      </description>
+      <arg name="toplevel" type="object" interface="xdg_toplevel"/>
+      <arg name="app_id" type="string" summary="app_id of the window to wait for"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_android_toplevel_v1" version="1">
+    <description summary="the Android task behind one toplevel">
+      Describes one Android task window. Destroying it does not affect the
+      xdg_toplevel; the window simply loses its Android extras.
+    </description>
+
+    <enum name="resize_lock">
+      <entry name="none" value="0" summary="the window resizes freely"/>
+      <entry name="fixed" value="1"
+             summary="the app cannot resize; keep the size it asks for and float the window"/>
+      <entry name="aspect" value="2"
+             summary="the app resizes but keeps the ratio from set_aspect"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="drop the Android extras of the window"/>
+    </request>
+
+    <request name="set_task">
+      <description summary="the Android task this window shows">
+        task_id is Android's task id, stable for the life of the task.
+        package is the Android package name. Both are double-buffered and
+        applied on the next xdg_surface commit.
+      </description>
+      <arg name="task_id" type="uint"/>
+      <arg name="package" type="string"/>
+    </request>
+
+    <request name="set_resize_lock">
+      <description summary="how the window may be resized">
+        Double-buffered, applied on the next commit. The default is none.
+      </description>
+      <arg name="lock" type="uint" enum="resize_lock"/>
+    </request>
+
+    <request name="set_aspect">
+      <description summary="width to height ratio kept by the aspect lock">
+        Double-buffered. Zero for either value clears the ratio.
+      </description>
+      <arg name="width" type="uint"/>
+      <arg name="height" type="uint"/>
+    </request>
+
+    <request name="set_title_color">
+      <description summary="the app's primary color for the title bar">
+        0xAARRGGBB. An alpha of zero means the app has no color and the
+        compositor uses its own. Double-buffered.
+      </description>
+      <arg name="argb" type="uint"/>
+    </request>
+
+    <event name="back">
+      <description summary="the user pressed Back for this window">
+        Sent when the user activates the title bar's Back button or the
+        compositor's Back shortcut while this window has focus.
+      </description>
+    </event>
+  </interface>
+</protocol>

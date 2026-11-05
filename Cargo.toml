@@ -15,8 +15,8 @@ include = ["/src/**/*.rs", "/protocols/*.xml", "/build.rs", "/Cargo.toml", "/REA
 default = []
 # Additive, and both may be on at once: the compositor takes `server`, the
 # shell and the system apps take `client`.
-client = ["dep:wayland-client"]
-server = ["dep:wayland-server"]
+client = ["dep:wayland-client", "wayland-protocols/client"]
+server = ["dep:wayland-server", "wayland-protocols/server"]
 
 [dependencies]
 bitflags = "2"
@@ -24,3 +24,5 @@ wayland-backend = "0.3"
 wayland-scanner = "0.31"
 wayland-client = { version = "0.31", optional = true }
 wayland-server = { version = "0.31", optional = true }
+# xdg-shell interfaces for protocols that extend xdg_toplevel.
+wayland-protocols = { version = "0.32", default-features = false }

@@ -12,6 +12,7 @@
 mod generate;
 
 pub mod agent_access;
+pub mod android_shell;
 pub mod app_icons;
 pub mod background_effects;
 pub mod input;
@@ -262,5 +263,39 @@ mod client_tests {
             .find(|request| request.name == "set_timelines")
             .map(|request| request.signature.len());
         assert_eq!(set_timelines, Some(2));
+    }
+}
+
+#[cfg(all(test, feature = "server", feature = "client"))]
+mod android_shell_tests {
+    use crate::android_shell::v1::{client, server};
+
+    /// The Android shell extends xdg_toplevel, so both halves must resolve
+    /// that interface from wayland-protocols and name their own as the XML does.
+    #[test]
+    fn the_android_shell_interfaces_are_named_as_expected() {
+        use wayland_client::Proxy as _;
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            server::crownos_android_shell_manager_v1::CrownosAndroidShellManagerV1::interface()
+                .name,
+            "crownos_android_shell_manager_v1"
+        );
+        assert_eq!(
+            client::crownos_android_toplevel_v1::CrownosAndroidToplevelV1::interface().name,
+            "crownos_android_toplevel_v1"
+        );
+        let get_android_toplevel =
+            server::crownos_android_shell_manager_v1::CrownosAndroidShellManagerV1::interface()
+                .requests
+                .iter()
+                .find(|request| request.name == "get_android_toplevel")
+                .map(|request| request.signature.len());
+        assert_eq!(
+            get_android_toplevel,
+            Some(2),
+            "new_id plus the xdg_toplevel"
+        );
     }
 }
