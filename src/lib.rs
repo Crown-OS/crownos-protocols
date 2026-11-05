@@ -298,4 +298,48 @@ mod android_shell_tests {
             "new_id plus the xdg_toplevel"
         );
     }
+
+    /// The values the compositor matches on, as the XML gives them: the
+    /// error codes it posts, the resize locks it applies, and Back.
+    #[test]
+    fn the_android_shell_wire_values_match_the_xml() {
+        use server::{
+            crownos_android_shell_manager_v1::{CrownosAndroidShellManagerV1, Error},
+            crownos_android_toplevel_v1::{CrownosAndroidToplevelV1, ResizeLock},
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(Error::AlreadyExtended as u32, 0);
+        assert_eq!(Error::NotAllowed as u32, 1);
+        assert_eq!(ResizeLock::try_from(0), Ok(ResizeLock::None));
+        assert_eq!(ResizeLock::try_from(1), Ok(ResizeLock::Fixed));
+        assert_eq!(ResizeLock::try_from(2), Ok(ResizeLock::Aspect));
+        assert!(ResizeLock::try_from(3).is_err());
+
+        let manager = CrownosAndroidShellManagerV1::interface();
+        let toplevel = CrownosAndroidToplevelV1::interface();
+        assert_eq!((manager.version, toplevel.version), (1, 1));
+
+        let mark_placeholder = manager
+            .requests
+            .iter()
+            .find(|request| request.name == "mark_placeholder")
+            .map(|request| {
+                (
+                    request.signature.len(),
+                    request
+                        .arg_interfaces
+                        .first()
+                        .map(|interface| interface.name),
+                )
+            });
+        assert_eq!(mark_placeholder, Some((2, Some("xdg_toplevel"))));
+
+        let back = toplevel
+            .events
+            .iter()
+            .find(|event| event.name == "back")
+            .map(|event| event.signature.len());
+        assert_eq!(back, Some(0), "Back carries nothing");
+    }
 }
