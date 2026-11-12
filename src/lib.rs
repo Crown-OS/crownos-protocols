@@ -21,6 +21,7 @@ pub mod session;
 pub mod surface_animation;
 pub mod surface_visibility;
 pub mod virtual_output;
+pub mod workspace_mode;
 
 #[cfg(all(test, feature = "server"))]
 mod tests {
@@ -216,6 +217,21 @@ mod tests {
         assert_eq!(Property::TranslateX as u32, 0);
         assert_eq!(Property::Opacity as u32, 4);
     }
+    #[test]
+    fn the_workspace_mode_interface_is_named_as_expected() {
+        use crate::workspace_mode::v1::server::crownos_workspace_mode_manager_v1::{
+            CrownosWorkspaceModeManagerV1, Error, Mode,
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosWorkspaceModeManagerV1::interface().name,
+            "crownos_workspace_mode_manager_v1"
+        );
+        assert_eq!(Mode::Tiling as u32, 0);
+        assert_eq!(Mode::Floating as u32, 1);
+        assert_eq!(Error::InvalidMode as u32, 0);
+    }
 }
 
 #[cfg(all(test, feature = "client"))]
@@ -247,6 +263,10 @@ mod client_tests {
         assert_eq!(
             crate::agent_access::v1::client::crownos_agent_access_v1::CrownosAgentAccessV1::interface().name,
             "crownos_agent_access_v1"
+        );
+        assert_eq!(
+            crate::workspace_mode::v1::client::crownos_workspace_mode_manager_v1::CrownosWorkspaceModeManagerV1::interface().name,
+            "crownos_workspace_mode_manager_v1"
         );
     }
 

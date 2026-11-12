@@ -23,6 +23,7 @@ crownos-protocols = { version = "0.1", features = ["client"] }  # apps
 | `crownos_surface_animation_v1` | `crownos_surface_animation_manager_v1`, `crownos_animated_surface_v1` | The compositor runs closed-form spring animations of a subsurface's translation, scale, rotation and opacity from a client-supplied CLOCK_MONOTONIC start time, so the app does not render every frame; `settled` and `interrupted` report where motion stopped or was retargeted. |
 | `crownos_surface_visibility_v1` | `crownos_surface_visibility_manager_v1`, `crownos_surface_visibility_v1` | Tells a client whether a surface is visible, occluded or hidden, and the scale it is drawn at while shown as a thumbnail (an overview), so it can throttle or lower detail. Changes are grouped by `done` and coalesced per scene update; animated values are reported where they settle. |
 | `crownos_agent_access_v1` | `crownos_agent_access_manager_v1`, `crownos_agent_access_v1` | An app asks the compositor for permission to expose its UI to AI agents (over MCP); the answer is a grant with an opaque token, a denial, or a later revocation. Privileged. |
+| `crownos_workspace_mode_v1` | `crownos_workspace_mode_manager_v1` | Reports whether the focused workspace tiles its windows or lets them float, on bind and on every change (including focus moving to a workspace in the other mode), and switches it with `set_mode`. Privileged. |
 
 ## C bindings
 
