@@ -17,6 +17,7 @@ pub mod app_icons;
 pub mod background_effects;
 pub mod capture_privacy;
 pub mod context;
+pub mod guest_seat;
 pub mod input;
 pub mod plugin_host;
 pub mod screencast;
@@ -265,6 +266,10 @@ mod tests {
         );
         assert_eq!(CrownosAgentCursorV1::interface().name, "crownos_agent_cursor_v1");
         assert_eq!(RevokeReason::Locked as u32, 2);
+        assert_eq!(
+            crate::guest_seat::v1::server::crownos_guest_seat_manager_v1::CrownosGuestSeatManagerV1::interface().name,
+            "crownos_guest_seat_manager_v1"
+        );
         assert_eq!(
             CrownosContextManagerV1::interface().name,
             "crownos_context_manager_v1"

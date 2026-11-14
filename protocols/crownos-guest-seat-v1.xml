@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_guest_seat_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="a seat of its own for a remote desktop guest">
+    A guest who works on this computer from another one, on a virtual output
+    made for them, must not take the user's pointer or keyboard focus away.
+    This protocol gives each guest a seat of their own, confined to the
+    output their session shows: the pointer cannot leave it, and the
+    keyboard focus can only go to windows on it.
+
+    A guest seat takes the same events as a crownos_input_injector_v1 and
+    delivers them through its own wl_seat. Guest input never triggers
+    compositor shortcuts and never reaches the lock screen.
+
+    Only the remote desktop media engine can bind the manager global.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_guest_seat_manager_v1" version="1">
+    <description summary="factory for guest seats"/>
+
+    <enum name="error">
+      <entry name="invalid_name" value="0"
+             summary="the name is empty, longer than 32 bytes or contains a control character"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Seats created through it live on until destroyed individually.
+      </description>
+    </request>
+
+    <request name="create_seat">
+      <description summary="create a seat confined to an output">
+        Creates a seat for the guest called name, confined to the output
+        whose wl_output name is output. The compositor answers with created
+        once the seat's wl_seat global is announced, or with revoked.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_guest_seat_v1"/>
+      <arg name="name" type="string"/>
+      <arg name="output" type="string" summary="the wl_output name of the guest's output"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_guest_seat_v1" version="1">
+    <description summary="one guest's pointer and keyboard">
+      Events are grouped into frames as on crownos_input_injector_v1: every
+      input request adds to the pending frame and frame applies them in
+      order. Coordinates are in the output's logical space, (0, 0) at its
+      top-left.
+
+      Keys and buttons still pressed when the seat is destroyed or revoked
+      are released by the compositor.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_value" value="0" summary="an enum argument is out of range"/>
+    </enum>
+
+    <enum name="button_state">
+      <entry name="released" value="0"/>
+      <entry name="pressed" value="1"/>
+    </enum>
+
+    <enum name="key_state">
+      <entry name="released" value="0"/>
+      <entry name="pressed" value="1"/>
+    </enum>
+
+    <enum name="axis">
+      <entry name="vertical_scroll" value="0"/>
+      <entry name="horizontal_scroll" value="1"/>
+    </enum>
+
+    <enum name="revoke_reason">
+      <entry name="locked" value="0" summary="the session locked"/>
+      <entry name="output_gone" value="1" summary="the guest's output went away"/>
+      <entry name="refused" value="2" summary="the compositor would not create the seat"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the seat"/>
+    </request>
+
+    <request name="pointer_motion">
+      <description summary="move the pointer relatively"/>
+      <arg name="dx" type="fixed"/>
+      <arg name="dy" type="fixed"/>
+    </request>
+
+    <request name="pointer_motion_absolute">
+      <description summary="warp the pointer">
+        Moves the pointer to (x, y) in the output's logical space.
+      </description>
+      <arg name="x" type="fixed"/>
+      <arg name="y" type="fixed"/>
+    </request>
+
+    <request name="button">
+      <arg name="button" type="uint" summary="evdev button code"/>
+      <arg name="state" type="uint" enum="button_state"/>
+    </request>
+
+    <request name="axis">
+      <arg name="axis" type="uint" enum="axis"/>
+      <arg name="value" type="fixed" summary="logical pixels, as wl_pointer.axis"/>
+    </request>
+
+    <request name="key">
+      <arg name="key" type="uint" summary="evdev key code"/>
+      <arg name="state" type="uint" enum="key_state"/>
+    </request>
+
+    <request name="frame">
+      <description summary="apply the pending events">
+        Applies the pending events in order as one logical hardware event
+        stamped with time_ms, a CLOCK_MONOTONIC millisecond timestamp, or 0
+        for now.
+      </description>
+      <arg name="time_ms" type="uint"/>
+    </request>
+
+    <event name="created">
+      <description summary="the seat exists">
+        The name of the wl_seat behind this guest seat.
+      </description>
+      <arg name="seat" type="string"/>
+    </event>
+
+    <event name="revoked">
+      <description summary="the seat was taken away">
+        The seat is gone and further requests are ignored. The client should
+        destroy the object.
+      </description>
+      <arg name="reason" type="uint" enum="revoke_reason"/>
+    </event>
+  </interface>
+</protocol>
