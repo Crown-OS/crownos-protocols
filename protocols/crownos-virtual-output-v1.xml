@@ -49,7 +49,7 @@
     only be done by creating a new major version of the extension.
   </description>
 
-  <interface name="crownos_virtual_output_manager_v1" version="1">
+  <interface name="crownos_virtual_output_manager_v1" version="2">
     <description summary="factory for virtual outputs">
       A global factory for crownos_virtual_output_v1 objects.
     </description>
@@ -99,7 +99,7 @@
     </request>
   </interface>
 
-  <interface name="crownos_virtual_output_v1" version="1">
+  <interface name="crownos_virtual_output_v1" version="2">
     <description summary="one virtual output">
       A virtual output, owned by the client that created it. It exists from
       the created event until the object is destroyed or closed is sent.
@@ -179,6 +179,19 @@
         sent on the object.
       </description>
       <arg name="reason" type="uint" enum="close_reason"/>
+    </event>
+
+    <event name="title" since="2">
+      <description summary="the title of the window in front">
+        The title of the window in front on the output: the focused window of
+        its active workspace, else the topmost one. An empty title means no
+        window is shown. Sent after created, and again each time the window
+        in front or its title changes.
+
+        A client that streams the output to another computer shows this title
+        on the window it presents the stream in.
+      </description>
+      <arg name="title" type="string"/>
     </event>
   </interface>
 </protocol>
