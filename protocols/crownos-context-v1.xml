@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_context_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="what the user is doing, for the visual context engine">
+    The visual context engine builds the user's memory of their own work from
+    what is on screen. The compositor is the only party that knows which
+    window has focus, who owns it, when the user is typing and when the
+    screen must not be looked at. This protocol hands that to one client,
+    the context engine, in a form that carries no content: counts of key
+    presses, never which keys; the existence of a selection, never its text.
+
+    Only the context engine can bind the manager global. One binding at a
+    time.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_context_manager_v1" version="1">
+    <description summary="the stream of context">
+      On bind the compositor describes every mapped window, then sends focus
+      and session, and keeps the client current from then on.
+    </description>
+
+    <enum name="session_state">
+      <entry name="active" value="0"/>
+      <entry name="idle" value="1"/>
+      <entry name="locked" value="2"/>
+    </enum>
+
+    <enum name="selection_kind">
+      <entry name="clipboard" value="0"/>
+      <entry name="primary" value="1"/>
+    </enum>
+
+    <enum name="selection_flags" bitfield="true">
+      <entry name="secret" value="1" summary="the source marked the content as a secret"/>
+    </enum>
+
+    <enum name="activity_flags" bitfield="true">
+      <entry name="typing_paused" value="1" summary="no printable key for the pause threshold"/>
+      <entry name="scroll_stopped" value="2"/>
+    </enum>
+
+    <enum name="pause_origin">
+      <entry name="hotkey" value="0"/>
+      <entry name="engine" value="1"/>
+      <entry name="lock" value="2"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="set_paused">
+      <description summary="pause or resume observation">
+        While paused the compositor sends no window, focus, activity or
+        selection events and fails every capture the engine holds.
+      </description>
+      <arg name="paused" type="uint"/>
+    </request>
+
+    <event name="window">
+      <description summary="a mapped toplevel">
+        Its description follows on the new object and ends with done. The
+        identifier is the one its ext_foreign_toplevel_handle_v1 carries.
+      </description>
+      <arg name="window" type="new_id" interface="crownos_context_window_v1"/>
+      <arg name="identifier" type="string"/>
+    </event>
+
+    <event name="focus">
+      <arg name="window" type="object" interface="crownos_context_window_v1" allow-null="true"/>
+      <arg name="time_ms" type="uint" summary="CLOCK_MONOTONIC milliseconds"/>
+    </event>
+
+    <event name="session">
+      <arg name="state" type="uint" enum="session_state"/>
+    </event>
+
+    <event name="input_activity">
+      <description summary="how much the user did in the focused window">
+        Counts over the last interval, sent only when non-zero. Never the
+        identity of a key. text counts printable keys, edit Backspace and
+        Delete, nav arrows and paging, chords modifier combinations. Text
+        counts are zero while the window is sensitive.
+      </description>
+      <arg name="window" type="object" interface="crownos_context_window_v1" allow-null="true"/>
+      <arg name="interval_ms" type="uint"/>
+      <arg name="text" type="uint"/>
+      <arg name="edit" type="uint"/>
+      <arg name="nav" type="uint"/>
+      <arg name="chords" type="uint"/>
+      <arg name="clicks" type="uint"/>
+      <arg name="scroll_ticks" type="uint"/>
+      <arg name="pointer_travel" type="uint" summary="logical pixels, bucketed to hundreds"/>
+      <arg name="flags" type="uint" enum="activity_flags"/>
+    </event>
+
+    <event name="selection">
+      <description summary="a selection changed">
+        Which selection, the window whose client set it, its mime types
+        joined by commas and a size hint in bytes. Never the content.
+      </description>
+      <arg name="kind" type="uint" enum="selection_kind"/>
+      <arg name="window" type="object" interface="crownos_context_window_v1" allow-null="true"/>
+      <arg name="mime_types" type="string"/>
+      <arg name="size_hint" type="uint"/>
+      <arg name="flags" type="uint" enum="selection_flags"/>
+    </event>
+
+    <event name="paused">
+      <arg name="paused" type="uint"/>
+      <arg name="origin" type="uint" enum="pause_origin"/>
+    </event>
+
+    <event name="done">
+      <description summary="the initial description is complete"/>
+    </event>
+  </interface>
+
+  <interface name="crownos_context_window_v1" version="1">
+    <description summary="one toplevel, for the context engine">
+      Property events are followed by done; closed is last.
+    </description>
+
+    <enum name="state" bitfield="true">
+      <entry name="fullscreen" value="1"/>
+      <entry name="maximized" value="2"/>
+      <entry name="minimized" value="4"/>
+      <entry name="visible" value="8" summary="some of it is on a shown output"/>
+      <entry name="activated" value="16"/>
+    </enum>
+
+    <enum name="content_type">
+      <entry name="none" value="0"/>
+      <entry name="photo" value="1"/>
+      <entry name="video" value="2"/>
+      <entry name="game" value="3"/>
+    </enum>
+
+    <enum name="sensitivity" bitfield="true">
+      <entry name="password_input" value="1" summary="a text input with password or pin purpose is active"/>
+      <entry name="private_browsing" value="2" summary="the title matched a private-browsing rule"/>
+      <entry name="excluded" value="4" summary="an exclusion rule matched"/>
+      <entry name="app_requested" value="8" summary="the app excluded itself through crownos_capture_privacy_v1"/>
+      <entry name="engine_flagged" value="16" summary="flag_sensitive is in force"/>
+    </enum>
+
+    <enum name="flag_reason">
+      <entry name="secret_text" value="0" summary="a secret pattern was seen on screen"/>
+      <entry name="user" value="1" summary="the user asked through the engine"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="flag_sensitive">
+      <description summary="treat the window as sensitive for a while">
+        The engine saw something on screen that should not be captured. The
+        compositor sets engine_flagged for duration_ms and fails captures of
+        the window meanwhile.
+      </description>
+      <arg name="reason" type="uint" enum="flag_reason"/>
+      <arg name="duration_ms" type="uint"/>
+    </request>
+
+    <event name="app_id">
+      <arg name="app_id" type="string"/>
+    </event>
+
+    <event name="title">
+      <arg name="title" type="string"/>
+    </event>
+
+    <event name="process">
+      <description summary="the process behind the window">
+        The pid the kernel reported for the client; 0 when unknown.
+      </description>
+      <arg name="pid" type="int"/>
+    </event>
+
+    <event name="sandbox">
+      <description summary="the sandbox the client came from">
+        The wp_security_context_v1 engine, app_id and instance_id, all empty
+        for an unsandboxed client.
+      </description>
+      <arg name="engine" type="string"/>
+      <arg name="app_id" type="string"/>
+      <arg name="instance_id" type="string"/>
+    </event>
+
+    <event name="placement">
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="output" type="string"/>
+      <arg name="workspace" type="string"/>
+    </event>
+
+    <event name="state">
+      <arg name="state" type="uint" enum="state"/>
+    </event>
+
+    <event name="content_type">
+      <arg name="content_type" type="uint" enum="content_type"/>
+    </event>
+
+    <event name="sensitivity">
+      <arg name="sensitivity" type="uint" enum="sensitivity"/>
+    </event>
+
+    <event name="done"/>
+
+    <event name="closed"/>
+  </interface>
+</protocol>

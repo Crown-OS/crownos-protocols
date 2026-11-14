@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_window_control_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="the window list, with placement and process, and control over it">
+    An AI agent that works on the desktop needs to know what windows exist,
+    where they are, which process owns them and which one has focus, and to
+    bring one forward, move it to another workspace, or put it out of the
+    user's way. This protocol gives all of that to one trusted client, the
+    agent daemon, which speaks to agents on the compositor's behalf.
+
+    Each window object names the same window as an ext_foreign_toplevel_handle_v1
+    through its identifier, so the two lists can be joined. Workspaces are
+    named by the id their ext_workspace_handle_v1 announces.
+
+    Only the agent daemon can bind the manager global: a compositor exposes
+    it to clients it has verified, not to every privileged client.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_window_control_manager_v1" version="1">
+    <description summary="the list of windows and the focus">
+      On bind the compositor sends a window event for every mapped toplevel,
+      each followed by that window's description ending in done, then focus,
+      then done on the manager. Afterwards windows that map get a window
+      event, and changes arrive as further events on their objects.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop watching">
+        Destroy the manager. Window objects created from it stay valid until
+        destroyed individually, but receive no further events.
+      </description>
+    </request>
+
+    <request name="get_agent_workspace">
+      <description summary="where agents work">
+        Asks for the identifier of the agent workspace, the workspace windows
+        launched with WORKSPACE=headless map to; agent_workspace answers.
+        The compositor creates it on demand.
+      </description>
+    </request>
+
+    <event name="window">
+      <description summary="a mapped toplevel">
+        A window exists. Its description follows on the new object and ends
+        with done.
+      </description>
+      <arg name="window" type="new_id" interface="crownos_window_v1"/>
+    </event>
+
+    <event name="focus">
+      <description summary="keyboard focus moved">
+        The window with the user's keyboard focus, or null when no window has
+        it. Sent on bind and on every change.
+      </description>
+      <arg name="window" type="object" interface="crownos_window_v1" allow-null="true"/>
+    </event>
+
+    <event name="agent_workspace">
+      <description summary="the agent workspace">
+        The ext_workspace identifier of the agent workspace, in answer to
+        get_agent_workspace. Empty when the compositor has none.
+      </description>
+      <arg name="workspace" type="string"/>
+    </event>
+
+    <event name="done">
+      <description summary="the initial list is complete"/>
+    </event>
+  </interface>
+
+  <interface name="crownos_window_v1" version="1">
+    <description summary="one toplevel">
+      A toplevel as the agent daemon sees it. Events are grouped: a run of
+      property events is followed by done, after which the object is
+      consistent. closed is the last event; the client should then destroy
+      the object, and requests on it are ignored.
+    </description>
+
+    <enum name="state" bitfield="true">
+      <entry name="maximized" value="1"/>
+      <entry name="fullscreen" value="2"/>
+      <entry name="minimized" value="4"/>
+      <entry name="floating" value="8" summary="not tiled"/>
+      <entry name="activated" value="16" summary="has keyboard focus"/>
+      <entry name="agent_workspace" value="32" summary="on the agent workspace, out of the user's sight"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop watching this window"/>
+    </request>
+
+    <request name="focus">
+      <description summary="focus the window">
+        Gives the window keyboard focus, restoring it if minimized and
+        switching the user to its workspace. A window on the agent workspace
+        is shown there, not moved.
+      </description>
+    </request>
+
+    <request name="close">
+      <description summary="ask the window to close">
+        Sends the client an xdg_toplevel.close. The window may refuse.
+      </description>
+    </request>
+
+    <request name="move_to_workspace">
+      <description summary="move the window to a workspace">
+        Moves the window to the workspace with this ext_workspace identifier.
+        An unknown workspace is ignored.
+      </description>
+      <arg name="workspace" type="string"/>
+    </request>
+
+    <request name="make_visible">
+      <description summary="bring an agent's window onto the user's screen">
+        Moves a window from the agent workspace to the user's focused
+        workspace and focuses it. Does nothing to a window already there.
+      </description>
+    </request>
+
+    <request name="make_hidden">
+      <description summary="send the window to the agent workspace">
+        Moves the window to the agent workspace, creating it if needed, so it
+        keeps running out of the user's sight.
+      </description>
+    </request>
+
+    <request name="set_rectangle">
+      <description summary="place a floating window">
+        Sets the position and size of a floating window in its output's
+        logical coordinates. Ignored for tiled windows.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </request>
+
+    <event name="identifier">
+      <description summary="the window's identifier">
+        The identifier the window's ext_foreign_toplevel_handle_v1 carries.
+        Sent once, first.
+      </description>
+      <arg name="identifier" type="string"/>
+    </event>
+
+    <event name="app_id">
+      <arg name="app_id" type="string"/>
+    </event>
+
+    <event name="title">
+      <arg name="title" type="string"/>
+    </event>
+
+    <event name="process">
+      <description summary="the process behind the window">
+        The pid of the client that owns the window's surface, as the kernel
+        reported it when the client connected. 0 when unknown, as for a
+        window of a remote X11 client.
+      </description>
+      <arg name="pid" type="int"/>
+    </event>
+
+    <event name="placement">
+      <description summary="where the window is">
+        The window's content rectangle in its output's logical coordinates,
+        the output's name and the ext_workspace identifier of its workspace.
+      </description>
+      <arg name="x" type="int"/>
+      <arg name="y" type="int"/>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+      <arg name="output" type="string"/>
+      <arg name="workspace" type="string"/>
+    </event>
+
+    <event name="state">
+      <arg name="state" type="uint" enum="state"/>
+    </event>
+
+    <event name="done">
+      <description summary="the window's description is consistent"/>
+    </event>
+
+    <event name="closed">
+      <description summary="the window was unmapped"/>
+    </event>
+  </interface>
+</protocol>

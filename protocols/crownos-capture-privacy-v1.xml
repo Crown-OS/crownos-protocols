@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_capture_privacy_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="an application keeps its surface out of captures">
+    A password manager, a banking app or a private browser window can ask
+    that its surface never appear in the context engine's captures or in
+    screencasts, the way WDA_EXCLUDEFROMCAPTURE does on Windows. Any client
+    may use it: it only ever reduces what others see.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_capture_privacy_manager_v1" version="1">
+    <enum name="error">
+      <entry name="already_exists" value="0" summary="the surface already has a privacy object"/>
+    </enum>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="get_surface_privacy">
+      <arg name="id" type="new_id" interface="crownos_surface_privacy_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_surface_privacy_v1" version="1">
+    <description summary="capture policy of one surface">
+      Destroying the object, or the surface, ends the exclusion.
+    </description>
+
+    <request name="destroy" type="destructor"/>
+
+    <request name="set_excluded">
+      <description summary="exclude the surface from captures">
+        While excluded, captures that would show the surface fail or show it
+        blanked, at the compositor's choice.
+      </description>
+      <arg name="excluded" type="uint"/>
+    </request>
+  </interface>
+</protocol>

@@ -12,8 +12,11 @@
 mod generate;
 
 pub mod agent_access;
+pub mod agent_cursor;
 pub mod app_icons;
 pub mod background_effects;
+pub mod capture_privacy;
+pub mod context;
 pub mod input;
 pub mod plugin_host;
 pub mod screencast;
@@ -21,6 +24,7 @@ pub mod session;
 pub mod surface_animation;
 pub mod surface_visibility;
 pub mod virtual_output;
+pub mod window_control;
 pub mod workspace_mode;
 
 #[cfg(all(test, feature = "server"))]
@@ -231,6 +235,49 @@ mod tests {
         assert_eq!(Mode::Tiling as u32, 0);
         assert_eq!(Mode::Floating as u32, 1);
         assert_eq!(Error::InvalidMode as u32, 0);
+    }
+    #[test]
+    fn the_agent_platform_interfaces_are_named_as_expected() {
+        use crate::agent_cursor::v1::server::{
+            crownos_agent_cursor_manager_v1::CrownosAgentCursorManagerV1,
+            crownos_agent_cursor_v1::{CrownosAgentCursorV1, RevokeReason},
+        };
+        use crate::capture_privacy::v1::server::crownos_surface_privacy_v1::CrownosSurfacePrivacyV1;
+        use crate::context::v1::server::{
+            crownos_context_manager_v1::CrownosContextManagerV1,
+            crownos_context_window_v1::{CrownosContextWindowV1, Sensitivity},
+        };
+        use crate::window_control::v1::server::{
+            crownos_window_control_manager_v1::CrownosWindowControlManagerV1,
+            crownos_window_v1::{CrownosWindowV1, State},
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosWindowControlManagerV1::interface().name,
+            "crownos_window_control_manager_v1"
+        );
+        assert_eq!(CrownosWindowV1::interface().name, "crownos_window_v1");
+        assert_eq!(State::AgentWorkspace.bits(), 32);
+        assert_eq!(
+            CrownosAgentCursorManagerV1::interface().name,
+            "crownos_agent_cursor_manager_v1"
+        );
+        assert_eq!(CrownosAgentCursorV1::interface().name, "crownos_agent_cursor_v1");
+        assert_eq!(RevokeReason::Locked as u32, 2);
+        assert_eq!(
+            CrownosContextManagerV1::interface().name,
+            "crownos_context_manager_v1"
+        );
+        assert_eq!(
+            CrownosContextWindowV1::interface().name,
+            "crownos_context_window_v1"
+        );
+        assert_eq!(Sensitivity::EngineFlagged.bits(), 16);
+        assert_eq!(
+            CrownosSurfacePrivacyV1::interface().name,
+            "crownos_surface_privacy_v1"
+        );
     }
 }
 
