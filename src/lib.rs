@@ -264,7 +264,10 @@ mod tests {
             CrownosAgentCursorManagerV1::interface().name,
             "crownos_agent_cursor_manager_v1"
         );
-        assert_eq!(CrownosAgentCursorV1::interface().name, "crownos_agent_cursor_v1");
+        assert_eq!(
+            CrownosAgentCursorV1::interface().name,
+            "crownos_agent_cursor_v1"
+        );
         assert_eq!(RevokeReason::Locked as u32, 2);
         assert_eq!(
             crate::guest_seat::v1::server::crownos_guest_seat_manager_v1::CrownosGuestSeatManagerV1::interface().name,
