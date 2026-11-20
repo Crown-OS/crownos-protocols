@@ -107,8 +107,9 @@
       <description summary="the name the settings use for the output">
         The name that compositor.ron files the monitor under when no entry
         has its connector name: "MAKE MODEL SERIAL" when the EDID gives a
-        serial number, else the connector name. A client that writes a
-        setting for this output uses this name.
+        serial number, else the connector name. A client that edits the
+        settings of this output looks the entry up by the wl_output name
+        first and by this name second, as the compositor does.
       </description>
       <arg name="identity" type="string"/>
     </event>
@@ -128,7 +129,7 @@
     <event name="state">
       <description summary="the output's role in the desktop">
         Exactly one output is primary at a time; when the primary output goes
-        away, the compositor selects another one and sends state to both. The
+        away, the compositor selects another one and sends state for it. The
         focused bit moves with the focused monitor, the monitor under the
         pointer.
       </description>
