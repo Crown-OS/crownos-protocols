@@ -109,7 +109,11 @@
         has its connector name: "MAKE MODEL SERIAL" when the EDID gives a
         serial number, else the connector name. A client that edits the
         settings of this output looks the entry up by the wl_output name
-        first and by this name second, as the compositor does.
+        first and by this name second, as the compositor does. A client
+        never builds this name itself: the compositor is its only source.
+        Sent again when the name changes, for example when a second monitor
+        with the same make, model and serial is plugged in and both fall
+        back to their connector names.
       </description>
       <arg name="identity" type="string"/>
     </event>
@@ -120,18 +124,22 @@
         applied for each surface the user did not set: the bar on every
         output, the dock and notification popups on the primary output only.
         A client shows its surface on this output only while its bit is set.
-        An output that is not part of the desktop, such as a hidden virtual
-        output, has 0.
+        A hidden output, one the pointer and the user's windows never go to,
+        has 0. A shown virtual output, such as a remote screen that extends
+        the desktop, is treated like any other output.
       </description>
       <arg name="shell" type="uint" enum="shell"/>
     </event>
 
     <event name="state">
       <description summary="the output's role in the desktop">
-        Exactly one output is primary at a time; when the primary output goes
-        away, the compositor selects another one and sends state for it. The
-        focused bit moves with the focused monitor, the monitor under the
-        pointer.
+        Exactly one output is primary at a time. When the primary changes,
+        whether the user picked another output or the primary output went
+        away, the compositor sends state to the output that loses the bit
+        and to the one that gains it, each followed by done, so a client
+        never sees two primaries after both groups. The focused bit moves
+        with the focused monitor, the monitor under the pointer, in the
+        same way.
       </description>
       <arg name="state" type="uint" enum="state"/>
     </event>

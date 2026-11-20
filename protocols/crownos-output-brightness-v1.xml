@@ -135,10 +135,12 @@
 
     <event name="level">
       <description summary="the brightness of the output">
-        The brightness of the output, from 0 to 10000. Sent after the first
-        control event, after every accepted set_level with the clamped value,
-        and whenever the level changes for any other reason, such as a
-        brightness key, another client or a refresh.
+        The brightness of the output, from 0 to 10000. Sent after every
+        control event, so the client knows the initial state is complete
+        once the first level arrives; after every accepted set_level with
+        the clamped value; and whenever the level changes for any other
+        reason, such as a brightness key, another client or a refresh. When
+        the control is none, the level is 10000 and never changes.
       </description>
       <arg name="level" type="uint" summary="perceptual level, 0 to 10000"/>
     </event>
