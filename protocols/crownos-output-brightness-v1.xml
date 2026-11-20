@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_output_brightness_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="the brightness of each output">
+    This protocol lets a shell component, such as the bar or the settings
+    app, show and change the brightness of each wl_output. The compositor
+    owns the brightness: it drives a laptop panel's backlight, an external
+    monitor's own brightness over DDC/CI, or, when the display has neither,
+    dims the output's picture itself. A client sees one level on one scale
+    whatever the compositor uses behind it.
+
+    Only privileged clients can bind the manager global. A compositor must
+    not expose it to sandboxed clients.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_output_brightness_manager_v1" version="1">
+    <description summary="factory for output brightness objects">
+      A global factory for crownos_output_brightness_v1 objects.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager. Brightness objects created through it are
+        unaffected.
+      </description>
+    </request>
+
+    <request name="get_output">
+      <description summary="control the brightness of an output">
+        Create an object that reports and changes the brightness of output.
+        The compositor sends control, then level, right after the object is
+        created. Several objects may control the same output; each one gets
+        the events that every change causes.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_output_brightness_v1"/>
+      <arg name="output" type="object" interface="wl_output"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_output_brightness_v1" version="1">
+    <description summary="the brightness of one output">
+      Reports and changes the brightness of one wl_output. The level is
+      perceptual, from 0 to 10000: 10000 is the brightest, and equal steps
+      look like equal changes to the user. Each control has a lowest level,
+      which can be above 0, so that the display never goes fully dark.
+
+      If the wl_output goes away, the object becomes inert: the compositor
+      sends no further events for it and ignores its requests, and the
+      client should destroy it.
+    </description>
+
+    <enum name="control">
+      <entry name="none" value="0"
+             summary="no backlight, no DDC/CI and no gamma: the level cannot be changed"/>
+      <entry name="backlight" value="1"
+             summary="the backlight of a built-in panel"/>
+      <entry name="ddc" value="2"
+             summary="the monitor's own brightness, over DDC/CI"/>
+      <entry name="software" value="3"
+             summary="the compositor dims the output's picture"/>
+    </enum>
+
+    <enum name="error">
+      <entry name="invalid_level" value="0" summary="set_level was above 10000"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop controlling the output">
+        Destroy the object. The compositor sends no further events for it.
+      </description>
+    </request>
+
+    <request name="set_level">
+      <description summary="change the brightness">
+        Change the brightness of the output to level, from 0 to 10000. A
+        level above 10000 is an invalid_level protocol error.
+
+        The compositor raises a level below the lowest level of the control
+        to that lowest level. Writes to slow
+        hardware are coalesced: when several set_level requests arrive before
+        the hardware has taken the previous one, the compositor writes only
+        the newest. The compositor answers each accepted request with a level
+        event that carries the clamped value.
+
+        When the control is none, the compositor ignores this request.
+      </description>
+      <arg name="level" type="uint" summary="perceptual level, 0 to 10000"/>
+    </request>
+
+    <request name="refresh">
+      <description summary="read the brightness from the hardware again">
+        Ask the compositor to read the brightness from the hardware again,
+        for example after the user changed it with the monitor's own buttons.
+        The compositor sends a level event if the level changed.
+      </description>
+    </request>
+
+    <event name="control">
+      <description summary="how the compositor changes the brightness">
+        How the compositor changes the brightness of this output. Sent first,
+        right after the object is created, and again if the compositor finds
+        a different control later, for example when a monitor starts to
+        answer over DDC/CI. A client disables its brightness control while
+        the control is none.
+      </description>
+      <arg name="control" type="uint" enum="control"/>
+    </event>
+
+    <event name="level">
+      <description summary="the brightness of the output">
+        The brightness of the output, from 0 to 10000. Sent after the first
+        control event, after every accepted set_level with the clamped value,
+        and whenever the level changes for any other reason, such as a
+        brightness key, another client or a refresh.
+      </description>
+      <arg name="level" type="uint" summary="perceptual level, 0 to 10000"/>
+    </event>
+  </interface>
+</protocol>

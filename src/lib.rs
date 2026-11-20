@@ -19,6 +19,8 @@ pub mod capture_privacy;
 pub mod context;
 pub mod guest_seat;
 pub mod input;
+pub mod output_brightness;
+pub mod output_info;
 pub mod plugin_host;
 pub mod screencast;
 pub mod session;
@@ -237,6 +239,92 @@ mod tests {
         assert_eq!(Mode::Floating as u32, 1);
         assert_eq!(Error::InvalidMode as u32, 0);
     }
+    /// The output object of version 2 takes the manager's version, so a
+    /// client that binds version 1 can never send get_output.
+    #[test]
+    fn the_workspace_mode_output_interface_is_version_2() {
+        use crate::workspace_mode::v1::server::{
+            crownos_workspace_mode_manager_v1::CrownosWorkspaceModeManagerV1,
+            crownos_workspace_mode_output_v1::{CrownosWorkspaceModeOutputV1, Error},
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(CrownosWorkspaceModeManagerV1::interface().version, 2);
+        assert_eq!(
+            CrownosWorkspaceModeOutputV1::interface().name,
+            "crownos_workspace_mode_output_v1"
+        );
+        assert_eq!(CrownosWorkspaceModeOutputV1::interface().version, 2);
+        assert_eq!(Error::InvalidMode as u32, 0);
+    }
+
+    /// A window object takes the version of the manager that announced it,
+    /// so both window control interfaces move together.
+    #[test]
+    fn the_window_control_interfaces_are_version_2() {
+        use crate::window_control::v1::server::{
+            crownos_window_control_manager_v1::CrownosWindowControlManagerV1,
+            crownos_window_v1::CrownosWindowV1,
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(CrownosWindowControlManagerV1::interface().version, 2);
+        assert_eq!(CrownosWindowV1::interface().version, 2);
+    }
+
+    #[test]
+    fn the_output_info_interfaces_are_named_as_expected() {
+        use crate::output_info::v1::server::{
+            crownos_output_info_manager_v1::CrownosOutputInfoManagerV1,
+            crownos_output_info_v1::{Capability, CrownosOutputInfoV1, Shell, State},
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosOutputInfoManagerV1::interface().name,
+            "crownos_output_info_manager_v1"
+        );
+        assert_eq!(
+            CrownosOutputInfoV1::interface().name,
+            "crownos_output_info_v1"
+        );
+        assert_eq!(CrownosOutputInfoManagerV1::interface().version, 1);
+        assert_eq!(CrownosOutputInfoV1::interface().version, 1);
+        assert_eq!(
+            Shell::all(),
+            Shell::Bar | Shell::Dock | Shell::Notifications
+        );
+        assert_eq!(Shell::Notifications.bits(), 4);
+        assert_eq!(State::all(), State::Primary | State::Focused);
+        assert_eq!(Capability::all(), Capability::Hdr | Capability::Virtual);
+        assert_eq!(Capability::Virtual.bits(), 2);
+    }
+
+    #[test]
+    fn the_output_brightness_interfaces_are_named_as_expected() {
+        use crate::output_brightness::v1::server::{
+            crownos_output_brightness_manager_v1::CrownosOutputBrightnessManagerV1,
+            crownos_output_brightness_v1::{Control, CrownosOutputBrightnessV1, Error},
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosOutputBrightnessManagerV1::interface().name,
+            "crownos_output_brightness_manager_v1"
+        );
+        assert_eq!(
+            CrownosOutputBrightnessV1::interface().name,
+            "crownos_output_brightness_v1"
+        );
+        assert_eq!(CrownosOutputBrightnessManagerV1::interface().version, 1);
+        assert_eq!(CrownosOutputBrightnessV1::interface().version, 1);
+        assert_eq!(Control::None as u32, 0);
+        assert_eq!(Control::Backlight as u32, 1);
+        assert_eq!(Control::Ddc as u32, 2);
+        assert_eq!(Control::Software as u32, 3);
+        assert_eq!(Error::InvalidLevel as u32, 0);
+    }
+
     #[test]
     fn the_agent_platform_interfaces_are_named_as_expected() {
         use crate::agent_cursor::v1::server::{
@@ -323,6 +411,41 @@ mod client_tests {
             crate::workspace_mode::v1::client::crownos_workspace_mode_manager_v1::CrownosWorkspaceModeManagerV1::interface().name,
             "crownos_workspace_mode_manager_v1"
         );
+        assert_eq!(
+            crate::workspace_mode::v1::client::crownos_workspace_mode_output_v1::CrownosWorkspaceModeOutputV1::interface().name,
+            "crownos_workspace_mode_output_v1"
+        );
+        assert_eq!(
+            crate::output_info::v1::client::crownos_output_info_v1::CrownosOutputInfoV1::interface(
+            )
+            .name,
+            "crownos_output_info_v1"
+        );
+        assert_eq!(
+            crate::output_brightness::v1::client::crownos_output_brightness_v1::CrownosOutputBrightnessV1::interface().name,
+            "crownos_output_brightness_v1"
+        );
+    }
+
+    /// Version 2 requests come after every version 1 request, so the
+    /// opcodes a version 1 client sends keep their meaning.
+    #[test]
+    fn the_version_2_requests_take_new_opcodes() {
+        use wayland_client::Proxy as _;
+
+        let opcode_of = |requests: &[wayland_backend::protocol::MessageDesc], name: &str| {
+            requests.iter().position(|request| request.name == name)
+        };
+        let window_requests =
+            crate::window_control::v1::client::crownos_window_v1::CrownosWindowV1::interface()
+                .requests;
+        assert_eq!(opcode_of(window_requests, "set_rectangle"), Some(6));
+        assert_eq!(opcode_of(window_requests, "move_to_output"), Some(7));
+
+        let manager_requests = crate::workspace_mode::v1::client::crownos_workspace_mode_manager_v1::CrownosWorkspaceModeManagerV1::interface()
+            .requests;
+        assert_eq!(opcode_of(manager_requests, "set_mode"), Some(1));
+        assert_eq!(opcode_of(manager_requests, "get_output"), Some(2));
     }
 
     /// Frames and releases each get their own timeline, so neither party

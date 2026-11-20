@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_output_info_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="what the compositor decided about each output">
+    This protocol tells a shell component, such as the bar, the dock or the
+    notification daemon, how the compositor treats each wl_output: the name
+    it has in the user's settings, the shell surfaces the user wants on it, whether it is the primary or the focused output, what the display
+    behind it can do, and the depth the compositor scans it out at.
+
+    The compositor resolves the user's settings and their defaults itself, so
+    a client never has to match output names against the settings file. The
+    description of a wl_output carries no serial number, so a client could
+    not do that matching reliably.
+
+    Only privileged clients can bind the manager global. A compositor must
+    not expose it to sandboxed clients.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_output_info_manager_v1" version="1">
+    <description summary="factory for output info objects">
+      A global factory for crownos_output_info_v1 objects.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager. Output info objects created through it are
+        unaffected.
+      </description>
+    </request>
+
+    <request name="get_output">
+      <description summary="observe how the compositor treats an output">
+        Create an object that reports how the compositor treats output. The
+        compositor sends every event of crownos_output_info_v1, followed by
+        done, right after the object is created. Several objects may observe
+        the same output.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_output_info_v1"/>
+      <arg name="output" type="object" interface="wl_output"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_output_info_v1" version="1">
+    <description summary="how the compositor treats one output">
+      Reports how the compositor treats one wl_output. Right after the object
+      is created, the compositor sends identity, shell, state, capabilities
+      and scanout_depth, followed by done. After that, each change is a group
+      of the events whose values changed, ended by a done event; the client
+      applies the group atomically on done.
+
+      If the wl_output goes away, the object becomes inert: the compositor
+      sends no further events for it, and the client should destroy it.
+    </description>
+
+    <enum name="shell" bitfield="true">
+      <entry name="bar" value="1" summary="the bar"/>
+      <entry name="dock" value="2" summary="the dock"/>
+      <entry name="notifications" value="4" summary="notification popups"/>
+    </enum>
+
+    <enum name="state" bitfield="true">
+      <entry name="primary" value="1" summary="the primary output"/>
+      <entry name="focused" value="2" summary="the output the pointer is on"/>
+    </enum>
+
+    <enum name="capability" bitfield="true">
+      <entry name="hdr" value="1"
+             summary="the EDID claims a PQ or HLG EOTF"/>
+      <entry name="virtual" value="2"
+             summary="no display behind the output; a remote screen or a headless target"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="stop observing the output">
+        Destroy the object. The compositor sends no further events for it.
+      </description>
+    </request>
+
+    <event name="identity">
+      <description summary="the name the settings use for the output">
+        The name that compositor.ron files the monitor under when no entry
+        has its connector name: "MAKE MODEL SERIAL" when the EDID gives a
+        serial number, else the connector name. A client that writes a
+        setting for this output uses this name.
+      </description>
+      <arg name="identity" type="string"/>
+    </event>
+
+    <event name="shell">
+      <description summary="the shell surfaces the output shows">
+        The shell surfaces the user wants on this output, with the defaults
+        applied for each surface the user did not set: the bar on every
+        output, the dock and notification popups on the primary output only.
+        A client shows its surface on this output only while its bit is set.
+        An output that is not part of the desktop, such as a hidden virtual
+        output, has 0.
+      </description>
+      <arg name="shell" type="uint" enum="shell"/>
+    </event>
+
+    <event name="state">
+      <description summary="the output's role in the desktop">
+        Exactly one output is primary at a time; when the primary output goes
+        away, the compositor selects another one and sends state to both. The
+        focused bit moves with the focused monitor, the monitor under the
+        pointer.
+      </description>
+      <arg name="state" type="uint" enum="state"/>
+    </event>
+
+    <event name="capabilities">
+      <description summary="what the display behind the output can do">
+        What the display behind the output can do, as the compositor reads
+        it from the hardware. The compositor sends the event again if these
+        values change.
+      </description>
+      <arg name="capabilities" type="uint" enum="capability"/>
+    </event>
+
+    <event name="scanout_depth">
+      <description summary="the bit depth the output is scanned out at">
+        The number of bits for each color channel that the compositor
+        actually scans out to the display: 8 or 10. This can be lower than
+        what the user asked for when the hardware refuses the deeper format.
+        A nested compositor always reports 8.
+      </description>
+      <arg name="bits" type="uint"/>
+    </event>
+
+    <event name="done">
+      <description summary="the end of a group of changes">
+        Sent after a group of events, including the initial one, so the
+        client sees them as one change.
+      </description>
+    </event>
+  </interface>
+</protocol>

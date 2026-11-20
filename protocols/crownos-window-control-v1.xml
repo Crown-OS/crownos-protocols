@@ -26,9 +26,9 @@
   <description summary="the window list, with placement and process, and control over it">
     An AI agent that works on the desktop needs to know what windows exist,
     where they are, which process owns them and which one has focus, and to
-    bring one forward, move it to another workspace, or put it out of the
-    user's way. This protocol gives all of that to one trusted client, the
-    agent daemon, which speaks to agents on the compositor's behalf.
+    bring one forward, move it to another workspace or monitor, or put it out
+    of the user's way. This protocol gives all of that to one trusted client,
+    the agent daemon, which speaks to agents on the compositor's behalf.
 
     Each window object names the same window as an ext_foreign_toplevel_handle_v1
     through its identifier, so the two lists can be joined. Workspaces are
@@ -43,7 +43,7 @@
     only be done by creating a new major version of the extension.
   </description>
 
-  <interface name="crownos_window_control_manager_v1" version="1">
+  <interface name="crownos_window_control_manager_v1" version="2">
     <description summary="the list of windows and the focus">
       On bind the compositor sends a window event for every mapped toplevel,
       each followed by that window's description ending in done, then focus,
@@ -95,7 +95,7 @@
     </event>
   </interface>
 
-  <interface name="crownos_window_v1" version="1">
+  <interface name="crownos_window_v1" version="2">
     <description summary="one toplevel">
       A toplevel as the agent daemon sees it. Events are grouped: a run of
       property events is followed by done, after which the object is
@@ -212,5 +212,17 @@
     <event name="closed">
       <description summary="the window was unmapped"/>
     </event>
+
+    <request name="move_to_output" since="2">
+      <description summary="move the window to an output">
+        Moves the window to the output with this name, as the placement event
+        names it, onto that output's active workspace. When the compositor
+        switches workspaces on all outputs together, the window goes to the
+        workspace at the index of its current workspace instead. An unknown
+        output, and an output that is not part of the desktop, such as a
+        hidden virtual output, is ignored.
+      </description>
+      <arg name="output" type="string"/>
+    </request>
   </interface>
 </protocol>
