@@ -23,6 +23,7 @@ pub mod output_brightness;
 pub mod output_info;
 pub mod plugin_host;
 pub mod screencast;
+pub mod secret_input;
 pub mod session;
 pub mod surface_animation;
 pub mod surface_visibility;
@@ -33,6 +34,36 @@ pub mod workspace_mode;
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::background_effects::v1::server::*;
+
+    /// The secret input global and its enums, as crownos-secretsd and crownpositor name them.
+    #[test]
+    fn the_secret_input_names_are_stable() {
+        use super::secret_input::v1::server::crownos_secret_consent_v1::{
+            Action, CrownosSecretConsentV1,
+        };
+        use super::secret_input::v1::server::crownos_secret_input_manager_v1::CrownosSecretInputManagerV1;
+        use super::secret_input::v1::server::crownos_secret_input_request_v1::{
+            CrownosSecretInputRequestV1, Kind, Outcome,
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosSecretConsentV1::interface().name,
+            "crownos_secret_consent_v1"
+        );
+        assert_eq!(Action::Proxy as u32, 1);
+        assert_eq!(
+            CrownosSecretInputManagerV1::interface().name,
+            "crownos_secret_input_manager_v1"
+        );
+        assert_eq!(
+            CrownosSecretInputRequestV1::interface().name,
+            "crownos_secret_input_request_v1"
+        );
+        assert_eq!(Kind::Password as u32, 1);
+        assert_eq!(Outcome::NotPasswordField as u32, 2);
+        assert_eq!(Outcome::SessionLocked as u32, 8);
+    }
 
     /// The generated names the compositor binds against, checked here so a
     /// rename in the XML fails at the protocol crate rather than three crates
