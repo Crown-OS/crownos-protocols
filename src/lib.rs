@@ -38,12 +38,20 @@ mod tests {
     /// The secret input global and its enums, as crownos-secretsd and crownpositor name them.
     #[test]
     fn the_secret_input_names_are_stable() {
+        use super::secret_input::v1::server::crownos_secret_consent_v1::{
+            Action, CrownosSecretConsentV1,
+        };
         use super::secret_input::v1::server::crownos_secret_input_manager_v1::CrownosSecretInputManagerV1;
         use super::secret_input::v1::server::crownos_secret_input_request_v1::{
             CrownosSecretInputRequestV1, Kind, Outcome,
         };
         use wayland_server::Resource as _;
 
+        assert_eq!(
+            CrownosSecretConsentV1::interface().name,
+            "crownos_secret_consent_v1"
+        );
+        assert_eq!(Action::Proxy as u32, 1);
         assert_eq!(
             CrownosSecretInputManagerV1::interface().name,
             "crownos_secret_input_manager_v1"
