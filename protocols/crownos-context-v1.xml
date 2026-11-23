@@ -40,6 +40,11 @@
     if that client has the engine scope, so a version 1 client sees the
     protocol as it was.
 
+    The compositor names a client by the program of the process that
+    connected, and reads it only when the client connects. A process that
+    turned off PR_SET_DUMPABLE cannot be read and gets no scope. A daemon
+    that turns it off must connect first.
+
     Warning! The protocol described in this file is currently in the testing
     phase. Backward compatible changes may be added together with the
     corresponding interface version bump. Backward incompatible changes can
