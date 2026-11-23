@@ -27,12 +27,18 @@
     The visual context engine builds the user's memory of their own work from
     what is on screen. The compositor is the only party that knows which
     window has focus, who owns it, when the user is typing and when the
-    screen must not be looked at. This protocol hands that to one client,
-    the context engine, in a form that carries no content: counts of key
-    presses, never which keys; the existence of a selection, never its text.
+    screen must not be looked at. This protocol gives that to the context
+    engine, and to other applications the user lets see it, in a form that
+    carries no content: counts of key presses, never which keys; the
+    existence of a selection, never its text.
 
-    Only the context engine can bind the manager global. One binding at a
-    time.
+    The compositor decides who can bind the manager global from the grants
+    of the user. In version 1 only the context engine can bind it, one
+    binding at a time. From version 2 many clients can bind it at the same
+    time. Each client gets a scope, and the compositor sends each client
+    only what its scope allows. The compositor binds a version 1 client only
+    if that client has the engine scope, so a version 1 client sees the
+    protocol as it was.
 
     Warning! The protocol described in this file is currently in the testing
     phase. Backward compatible changes may be added together with the
@@ -40,10 +46,11 @@
     only be done by creating a new major version of the extension.
   </description>
 
-  <interface name="crownos_context_manager_v1" version="1">
+  <interface name="crownos_context_manager_v1" version="2">
     <description summary="the stream of context">
       On bind the compositor describes every mapped window, then sends focus
-      and session, and keeps the client current from then on.
+      and session, and keeps the client current from then on. From version
+      2 the compositor sends the scope event before all other events.
     </description>
 
     <enum name="session_state">
@@ -78,6 +85,12 @@
       <description summary="pause or resume observation">
         While paused the compositor sends no window, focus, activity or
         selection events and fails every capture the engine holds.
+
+        A client with the engine scope pauses observation for all clients,
+        and every client gets the paused event with origin engine. A client
+        without the engine scope pauses only its own stream: only that
+        client gets the paused event, and the streams of other clients
+        continue.
       </description>
       <arg name="paused" type="uint"/>
     </request>
@@ -139,9 +152,51 @@
     <event name="done">
       <description summary="the initial description is complete"/>
     </event>
+
+    <!-- Version 2 additions -->
+
+    <enum name="scope" bitfield="true" since="2">
+      <description summary="what a client may see">
+        A client without metadata gets no window objects and no focus,
+        activity or selection events.
+      </description>
+      <entry name="metadata" value="1" summary="windows, focus, session, activity counts and placement; no titles"/>
+      <entry name="text" value="2" summary="window titles and selection events"/>
+      <entry name="raw" value="4" summary="captures of window pixels are allowed"/>
+      <entry name="engine" value="8" summary="includes metadata, text and raw; set_paused pauses every client; flag_sensitive is not rate-limited"/>
+    </enum>
+
+    <enum name="revoke_reason" since="2">
+      <entry name="user" value="0" summary="the user removed or changed the grant"/>
+      <entry name="expired" value="1" summary="the grant reached its end time or its session ended"/>
+    </enum>
+
+    <event name="scope" since="2">
+      <description summary="the scope of this client">
+        Sent on bind before all other events, and again each time the grant
+        of the client changes. When the scope gets smaller, the compositor
+        sends closed for each window object the client can no longer see,
+        and sends no events that the new scope does not allow.
+      </description>
+      <arg name="scope" type="uint" enum="scope"/>
+    </event>
+
+    <event name="revoked" since="2">
+      <description summary="the grant of this client was withdrawn">
+        After this event the manager and all its window objects are inert.
+        The compositor sends no more events on them and ignores all
+        requests except destroy. The client must destroy the objects. To
+        get context again, the client must bind the global again, and the
+        compositor decides again.
+
+        A version 1 client does not get this event. The compositor sends
+        closed for each of its window objects and then sends no more events.
+      </description>
+      <arg name="reason" type="uint" enum="revoke_reason"/>
+    </event>
   </interface>
 
-  <interface name="crownos_context_window_v1" version="1">
+  <interface name="crownos_context_window_v1" version="2">
     <description summary="one toplevel, for the context engine">
       Property events are followed by done; closed is last.
     </description>
@@ -181,6 +236,12 @@
         The engine saw something on screen that should not be captured. The
         compositor sets engine_flagged for duration_ms and fails captures of
         the window meanwhile.
+
+        Every bound client can send this request. From version 2 the
+        compositor limits the rate for clients without the engine scope:
+        it ignores a request over the limit, and it can make duration_ms
+        shorter. This is not a protocol error. A client must not send more
+        than one request for a window each second.
       </description>
       <arg name="reason" type="uint" enum="flag_reason"/>
       <arg name="duration_ms" type="uint"/>
