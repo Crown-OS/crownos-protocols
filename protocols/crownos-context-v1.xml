@@ -51,6 +51,14 @@
     LD_PRELOAD. This holds for the engine scope too. For a sandboxed client
     the scope is enforced, because the sandbox engine names the app.
 
+    Known limits of the current compositor: it refuses the engine scope to
+    a process started with LD_PRELOAD or LD_LIBRARY_PATH, but only as far as
+    it can read the environment. Consent dialogs and the lock screen take no
+    input method or on-screen keyboard, so a device with touch input only
+    cannot answer or unlock until the compositor draws a trusted keyboard of
+    its own. A virtual keyboard's modifiers still reach a consent dialog;
+    its keys do not.
+
     Warning! The protocol described in this file is currently in the testing
     phase. Backward compatible changes may be added together with the
     corresponding interface version bump. Backward incompatible changes can
