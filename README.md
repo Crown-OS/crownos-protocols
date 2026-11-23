@@ -31,6 +31,7 @@ crownos-protocols = { version = "0.1", features = ["client"] }  # apps
 | `crownos_output_info_v1` | `crownos_output_info_manager_v1`, `crownos_output_info_v1` | How the compositor treats each output, so shell apps never match output names against the settings: the name the settings use for it, the shell surfaces it shows (bar, dock, notifications, defaults applied), whether it is primary or focused, whether its display claims HDR or is virtual, and the bits per channel it is scanned out at. Grouped by `done`. Privileged. |
 | `crownos_output_brightness_v1` | `crownos_output_brightness_manager_v1`, `crownos_output_brightness_v1` | The brightness of each output on one perceptual scale from 0 to 10000, whether the compositor drives a backlight, DDC/CI or a software dim, with `none` for an output whose level cannot change; `set_level` is clamped and coalesced, `refresh` reads the hardware again. Privileged. |
 | `crownos_capture_privacy_v1` | `crownos_capture_privacy_manager_v1`, `crownos_surface_privacy_v1` | An application keeps a surface of its own out of captures. Any client. |
+| `crownos_secret_input_v1` | `crownos_secret_input_manager_v1` | The compositor types a stored secret into a checked field after its own confirmation. Only crownos-secretsd. |
 
 ## C bindings
 

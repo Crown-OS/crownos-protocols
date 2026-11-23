@@ -23,6 +23,7 @@ pub mod output_brightness;
 pub mod output_info;
 pub mod plugin_host;
 pub mod screencast;
+pub mod secret_input;
 pub mod session;
 pub mod surface_animation;
 pub mod surface_visibility;
@@ -33,6 +34,22 @@ pub mod workspace_mode;
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::background_effects::v1::server::*;
+
+    /// The secret input global and its enums, as crownos-secretsd and crownpositor name them.
+    #[test]
+    fn the_secret_input_names_are_stable() {
+        use super::secret_input::v1::server::crownos_secret_input_manager_v1::{
+            CrownosSecretInputManagerV1, Flags, Outcome,
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosSecretInputManagerV1::interface().name,
+            "crownos_secret_input_manager_v1"
+        );
+        assert_eq!(Flags::TabAfter.bits(), 1);
+        assert_eq!(Outcome::NotPasswordField as u32, 2);
+    }
 
     /// The generated names the compositor binds against, checked here so a
     /// rename in the XML fails at the protocol crate rather than three crates
