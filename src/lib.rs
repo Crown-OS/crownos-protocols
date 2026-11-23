@@ -448,6 +448,45 @@ mod client_tests {
         assert_eq!(opcode_of(manager_requests, "get_output"), Some(2));
     }
 
+    /// The context events of version 2 come after every version 1 event,
+    /// so a version 1 client decodes the same opcodes as before.
+    #[test]
+    fn the_context_version_2_events_take_new_opcodes() {
+        use crate::context::v1::client::{
+            crownos_context_manager_v1::{self, CrownosContextManagerV1, RevokeReason, Scope},
+            crownos_context_window_v1::CrownosContextWindowV1,
+        };
+        use wayland_client::Proxy as _;
+
+        let manager = CrownosContextManagerV1::interface();
+        assert_eq!(manager.version, 2);
+        assert_eq!(CrownosContextWindowV1::interface().version, 2);
+        let event_names: Vec<_> = manager.events.iter().map(|event| event.name).collect();
+        assert_eq!(
+            event_names,
+            [
+                "window",
+                "focus",
+                "session",
+                "input_activity",
+                "selection",
+                "paused",
+                "done",
+                "scope",
+                "revoked"
+            ]
+        );
+        assert_eq!(crownos_context_manager_v1::EVT_SCOPE_SINCE, 2);
+        assert_eq!(crownos_context_manager_v1::EVT_REVOKED_SINCE, 2);
+        assert_eq!(Scope::Metadata.bits(), 1);
+        assert_eq!(Scope::Text.bits(), 2);
+        assert_eq!(Scope::Raw.bits(), 4);
+        assert_eq!(Scope::Engine.bits(), 8);
+        assert_eq!(Scope::Pause.bits(), 16);
+        assert_eq!(crownos_context_manager_v1::PauseOrigin::Client as u32, 3);
+        assert_eq!(RevokeReason::Expired as u32, 1);
+    }
+
     /// Frames and releases each get their own timeline, so neither party
     /// ever signals a timeline the other one signals.
     #[test]
