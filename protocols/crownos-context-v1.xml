@@ -45,6 +45,12 @@
     turned off PR_SET_DUMPABLE cannot be read and gets no scope. A daemon
     that turns it off must connect first.
 
+    For an unsandboxed client a scope records the user's consent; it is not
+    enforcement. Any program of the same user can read the screen in other
+    ways, or start an allowed program through fork and exec or with
+    LD_PRELOAD. This holds for the engine scope too. For a sandboxed client
+    the scope is enforced, because the sandbox engine names the app.
+
     Warning! The protocol described in this file is currently in the testing
     phase. Backward compatible changes may be added together with the
     corresponding interface version bump. Backward incompatible changes can
