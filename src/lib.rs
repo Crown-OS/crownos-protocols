@@ -482,6 +482,8 @@ mod client_tests {
         assert_eq!(Scope::Text.bits(), 2);
         assert_eq!(Scope::Raw.bits(), 4);
         assert_eq!(Scope::Engine.bits(), 8);
+        assert_eq!(Scope::Pause.bits(), 16);
+        assert_eq!(crownos_context_manager_v1::PauseOrigin::Client as u32, 3);
         assert_eq!(RevokeReason::Expired as u32, 1);
     }
 
