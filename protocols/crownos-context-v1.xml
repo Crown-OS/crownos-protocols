@@ -190,6 +190,14 @@
         sends revoked instead. When the scope gets smaller, the compositor
         sends closed for each window object the client can no longer see,
         and sends no events that the new scope does not allow.
+
+        When the scope gets larger, the compositor sends what the client
+        could not see before, after this event. When the client gains
+        metadata, it gets a window event for each mapped window with all
+        its properties, then focus and session, then the done event of the
+        manager. When the client gains text, it gets a title event for each
+        window it already has, each followed by the done event of that
+        window.
       </description>
       <arg name="scope" type="uint" enum="scope"/>
     </event>
