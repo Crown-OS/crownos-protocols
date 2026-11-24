@@ -32,6 +32,7 @@ crownos-protocols = { version = "0.1", features = ["client"] }  # apps
 | `crownos_output_brightness_v1` | `crownos_output_brightness_manager_v1`, `crownos_output_brightness_v1` | The brightness of each output on one perceptual scale from 0 to 10000, whether the compositor drives a backlight, DDC/CI or a software dim, with `none` for an output whose level cannot change; `set_level` is clamped and coalesced, `refresh` reads the hardware again. Privileged. |
 | `crownos_capture_privacy_v1` | `crownos_capture_privacy_manager_v1`, `crownos_surface_privacy_v1` | An application keeps a surface of its own out of captures. Any client. |
 | `crownos_secret_input_v1` | `crownos_secret_input_manager_v1`, `crownos_secret_input_request_v1` | The compositor types a stored secret into a checked field after its own confirmation. Only crownos-secretsd. |
+| `crownos_keybind_v1` | `crownos_keybind_manager_v1`, `crownos_keybind_v1` | An application registers a named action with the chord it wants; the compositor assigns the chord the user set in the settings, the wanted chord when it is free, or none, and sends `assigned` again when that changes. While a chord is assigned, `pressed` and `released` come with key timestamps, so the app can tell a click from a hold; `cancelled` ends a press that never got its release. A chord can be modifiers only, such as `Super`. Any client. |
 
 ## C bindings
 

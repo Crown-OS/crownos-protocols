@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="crownos_keybind_v1">
+  <copyright>
+    Copyright © 2026 CrownOS
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="global shortcuts that applications register">
+    This protocol lets an application register a global shortcut: a key
+    chord that reaches the application while any window has focus, for
+    example to start a recording or to talk while a key is held.
+
+    The application names the action and asks for a chord. The compositor
+    decides which chord the action gets: the chord the user set for the
+    action in the settings, the chord the application asked for when that
+    chord is free, or no chord. The compositor tells the application the
+    result, and tells it again each time the assignment changes.
+
+    While the action has a chord, the compositor sends pressed when the user
+    presses the chord and released when the user lets go of it. A click is a
+    release that comes soon after the press, and a hold is a release that
+    comes later. The application measures the time between the two events.
+    The focused client does not receive the key events of an assigned chord
+    that has a key. It does receive the key events of a chord of modifiers
+    only, because until the user lets go, the modifiers can be the start of a
+    different chord.
+
+    A chord is written the way the CrownOS settings write it: the modifiers
+    Super, Ctrl, Alt and Shift and one key, joined by "+", for example
+    "Super+Shift+R", or the modifiers only, for example "Super". "None" means
+    no chord. A chord that an application asks for must hold Super, Ctrl or Alt,
+    so that no application can take a typing key such as "R" or "Shift+R"
+    from the other windows. The user can set any chord in the settings.
+
+    Any client can bind the manager global.
+
+    Warning! The protocol described in this file is currently in the testing
+    phase. Backward compatible changes may be added together with the
+    corresponding interface version bump. Backward incompatible changes can
+    only be done by creating a new major version of the extension.
+  </description>
+
+  <interface name="crownos_keybind_manager_v1" version="1">
+    <description summary="factory for application keybinds">
+      A global factory for crownos_keybind_v1 objects.
+    </description>
+
+    <enum name="error">
+      <entry name="invalid_identity" value="0"
+             summary="the app_id or the name is empty"/>
+    </enum>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        Destroy the manager. Keybinds made through it are unaffected.
+      </description>
+    </request>
+
+    <request name="register">
+      <description summary="register an action and ask for a chord">
+        Register one action of the application. The compositor sends assigned
+        on the new object as the first event.
+
+        app_id identifies the application and should match the app_id of its
+        toplevels. name identifies the action inside the application, for
+        example "toggle-recording". The settings store the user's chord under
+        the pair of app_id and name, so both must stay the same from one run
+        to the next. An empty app_id or name is a protocol error.
+
+        description is a short, human-readable text that tells the user what
+        the action does, for example "Start or stop a recording". The
+        compositor can show it in the settings.
+
+        preferred_keys is the chord the application asks for, or "None" or an
+        empty string to ask for no chord. The compositor does not assign a
+        chord that it cannot read, that holds none of Super,
+        Ctrl and Alt, or that the desktop or another application already uses.
+        An application that already has the chord it asked for keeps it until
+        the user gives the chord to a different action.
+
+        When two objects register the same app_id and name, they share one
+        chord, and only the object registered last receives pressed and
+        released.
+      </description>
+      <arg name="id" type="new_id" interface="crownos_keybind_v1"/>
+      <arg name="app_id" type="string" summary="the application's app_id"/>
+      <arg name="name" type="string" summary="stable name of the action"/>
+      <arg name="description" type="string" summary="what the action does"/>
+      <arg name="preferred_keys" type="string" summary="the chord the application asks for"/>
+    </request>
+  </interface>
+
+  <interface name="crownos_keybind_v1" version="1">
+    <description summary="one registered action">
+      One action of an application, and the chord the compositor assigned to
+      it. assigned is the first event. After that, pressed and released come
+      in pairs, and cancelled can end a press in place of released.
+    </description>
+
+    <request name="destroy" type="destructor">
+      <description summary="remove the action">
+        Destroy the object. The compositor releases the chord, and no more
+        events are sent.
+      </description>
+    </request>
+
+    <event name="assigned">
+      <description summary="the chord of the action">
+        The chord the action has now, in the format the protocol description
+        gives. "None" means the action has no chord, and pressed is not sent
+        until assigned gives a chord again. The value can be different from
+        preferred_keys: the user can set a different chord or remove it, and
+        a chord that is already in use is not assigned.
+
+        The compositor sends this event after register, and again each time
+        the chord changes.
+      </description>
+      <arg name="keys" type="string" summary="the assigned chord, or None"/>
+    </event>
+
+    <event name="pressed">
+      <description summary="the user pressed the chord">
+        The user pressed the key of the assigned chord while its modifiers
+        were held. For a chord of modifiers only, the user pressed the last of
+        its modifiers, no other modifier was held and no other key was down.
+        time is in milliseconds, on the same clock as wl_keyboard key events.
+      </description>
+      <arg name="time" type="uint" summary="timestamp with millisecond granularity"/>
+    </event>
+
+    <event name="released">
+      <description summary="the user let go of the chord">
+        The user let go of the key that sent pressed. The modifiers can be
+        released before the key: the event still comes when the key goes up.
+        For a chord of modifiers only, the user let go of one of its
+        modifiers. time uses the same clock as pressed.
+      </description>
+      <arg name="time" type="uint" summary="timestamp with millisecond granularity"/>
+    </event>
+
+    <event name="cancelled">
+      <description summary="a press ended without a release">
+        The press ended without the user letting go of the key, for example
+        because the screen locked or the chord was assigned to a different
+        action. A press of a chord of modifiers only is also cancelled when
+        the user presses another key, adds a modifier, presses a pointer
+        button or scrolls, because then the user makes a different chord. The
+        application must not do the action of a click or a hold for this
+        press.
+      </description>
+    </event>
+  </interface>
+</protocol>

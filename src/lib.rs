@@ -19,6 +19,7 @@ pub mod capture_privacy;
 pub mod context;
 pub mod guest_seat;
 pub mod input;
+pub mod keybind;
 pub mod output_brightness;
 pub mod output_info;
 pub mod plugin_host;
@@ -357,6 +358,24 @@ mod tests {
     }
 
     #[test]
+    fn the_keybind_interfaces_are_named_as_expected() {
+        use crate::keybind::v1::server::{
+            crownos_keybind_manager_v1::{CrownosKeybindManagerV1, Error},
+            crownos_keybind_v1::CrownosKeybindV1,
+        };
+        use wayland_server::Resource as _;
+
+        assert_eq!(
+            CrownosKeybindManagerV1::interface().name,
+            "crownos_keybind_manager_v1"
+        );
+        assert_eq!(CrownosKeybindV1::interface().name, "crownos_keybind_v1");
+        assert_eq!(CrownosKeybindManagerV1::interface().version, 1);
+        assert_eq!(CrownosKeybindV1::interface().version, 1);
+        assert_eq!(Error::InvalidIdentity as u32, 0);
+    }
+
+    #[test]
     fn the_agent_platform_interfaces_are_named_as_expected() {
         use crate::agent_cursor::v1::server::{
             crownos_agent_cursor_manager_v1::CrownosAgentCursorManagerV1,
@@ -455,6 +474,10 @@ mod client_tests {
         assert_eq!(
             crate::output_brightness::v1::client::crownos_output_brightness_v1::CrownosOutputBrightnessV1::interface().name,
             "crownos_output_brightness_v1"
+        );
+        assert_eq!(
+            crate::keybind::v1::client::crownos_keybind_v1::CrownosKeybindV1::interface().name,
+            "crownos_keybind_v1"
         );
     }
 
